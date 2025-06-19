@@ -1,8 +1,13 @@
 pandas
-numpy
+influxdb-client
+requests
+python-binance
+tqdm
+pyarrow
 scikit-learn
 xgboost
 lightgbm
+python-dotenv
 backtrader
 python-binance
 influxdb-client

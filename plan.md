@@ -6,7 +6,9 @@
 - 투자 전략: 레버리지 활용, 양방향(롱/숏) 거래
 - PRD 및 개발 체크리스트의 상세 요구사항, 성공 지표, 단계별 과업 반영
 - 데이터 파이프라인, 피처 엔지니어링, 모델 훈련/저장, 리스크 관리, 백테스팅, 알림, 자동화, DRL 등 단계별 완료 기준 명확화
-- 스윙 트레이딩에 적합한 다중 타임프레임(1h, 4h, 1d) 분석 전략 도입, 과도한 프레임 추가는 피처 노이즈 및 복잡성 증가 위험
+- 스윙 트레이딩에 적합한 다중 타임프레임(1h, 4h, 1d) 분석 전략 도입. 과도한 프레임 추가는 피처 노이즈 및 복잡성 증가 위험.
+- 피처 엔지니어링 시 고려사항: look-ahead bias 방지 (예: `pd.merge_asof` 사용), 하이퍼파라미터 튜닝, 데이터 gap 처리 전략.
+- 모델 검증: 워크 포워드 분석(Walk-Forward Analysis)을 통한 시계열 데이터의 과적합 방지 및 일반화 성능 확보.
 - 환경 변수(.env) 기반 InfluxDB 연결 구조로 개선, gitignore/requirements.txt/dotenv 적용
 - 최근 인증 오류(401 Unauthorized)는 .env 내 InfluxDB 토큰/조직 정보 미일치로 확인, 사용자 직접 수정 필요
 - 디버깅용 로깅 코드는 제거하여 코드 원상 복구
@@ -35,8 +37,9 @@
 - [x] 실시간/과거 데이터 수집 및 InfluxDB 적재
 - [x] collector.py 스크립트 수정(데이터 수집 코드 활성화)
 - [x] collector.py의 query_data_from_influxdb 메소드의 SyntaxError/들여쓰기 문제 해결
-- [ ] 피처 엔지니어링 스크립트(features/build_features.py) 작성(다중 타임프레임 통합/정렬)
-- [ ] 삼중 장벽 레이블링 함수(get_triple_barrier_labels) 구현
+- [~] 피처 엔지니어링 스크립트(features/build_features.py) 개선 (다중 타임프레임 통합/정렬, 기술적 지표 추가)
+- [ ] `build_features.py` 내 look-ahead bias 검토 및 수정 (`pd.merge_asof` 적용)
+- [~] 삼중 장벽 레이블링 함수(get_triple_barrier_labels) 검토 (현재 `build_features.py`에 구현됨, 필요시 위치 조정)
 - [ ] 예측 모델(v1: XGBoost/LightGBM) 훈련 및 저장, 워크 포워드 검증
 - [ ] 리스크 관리 모듈 및 단위 테스트 작성
 - [ ] 백테스팅 엔진 템플릿 구축 및 v1 모델 성과 평가

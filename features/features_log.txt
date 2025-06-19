@@ -1,0 +1,30 @@
+--- Log started. Python executable: C:\Program Files\Python313\python.exe ---
+--- Python version: 3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)] ---
+--- Starting feature engineering script ---
+--- Processing 1h data for BTCUSDT ---
+Executing Flux query for BTCUSDT_1h...
+Error querying InfluxDB: (401)
+Reason: Unauthorized
+HTTP response headers: HTTPHeaderDict({'Content-Type': 'application/json; charset=utf-8', 'X-Influxdb-Build': 'OSS', 'X-Influxdb-Version': 'v2.7.12', 'X-Platform-Error-Code': 'unauthorized', 'Date': 'Thu, 19 Jun 2025 15:08:37 GMT', 'Content-Length': '55'})
+HTTP response body: b'{"code":"unauthorized","message":"unauthorized access"}'
+
+Warning: No data for 1h, skipping.
+--- Processing 4h data for BTCUSDT ---
+Executing Flux query for BTCUSDT_4h...
+Error querying InfluxDB: (401)
+Reason: Unauthorized
+HTTP response headers: HTTPHeaderDict({'Content-Type': 'application/json; charset=utf-8', 'X-Influxdb-Build': 'OSS', 'X-Influxdb-Version': 'v2.7.12', 'X-Platform-Error-Code': 'unauthorized', 'Date': 'Thu, 19 Jun 2025 15:08:37 GMT', 'Content-Length': '55'})
+HTTP response body: b'{"code":"unauthorized","message":"unauthorized access"}'
+
+Warning: No data for 4h, skipping.
+--- Processing 1d data for BTCUSDT ---
+Executing Flux query for BTCUSDT_1d...
+Error querying InfluxDB: (401)
+Reason: Unauthorized
+HTTP response headers: HTTPHeaderDict({'Content-Type': 'application/json; charset=utf-8', 'X-Influxdb-Build': 'OSS', 'X-Influxdb-Version': 'v2.7.12', 'X-Platform-Error-Code': 'unauthorized', 'Date': 'Thu, 19 Jun 2025 15:08:37 GMT', 'Content-Length': '55'})
+HTTP response body: b'{"code":"unauthorized","message":"unauthorized access"}'
+
+Warning: No data for 1d, skipping.
+Error: 1h base data is missing. Cannot build feature matrix.
+
+Feature matrix generation failed or resulted in an empty dataframe.
