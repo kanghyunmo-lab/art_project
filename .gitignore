@@ -1,0 +1,17 @@
+# Environments
+.venv
+venv/
+__pycache__/
+
+# Config - IMPORTANT: Add your credentials to a credentials.py file
+config/credentials.py
+
+# Data & Models
+*.csv
+*.db
+*.pkl
+*.hdf5
+
+# IDE
+.vscode/
+.idea/

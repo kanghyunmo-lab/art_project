@@ -1,0 +1,11 @@
+pandas
+numpy
+scikit-learn
+xgboost
+lightgbm
+backtrader
+python-binance
+influxdb-client
+python-telegram-bot
+#tensorflow
+#pytorch
