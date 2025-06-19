@@ -1,4 +1,7 @@
-print("--- collector.py script started ---")
+print("--- LOADING LATEST collector.py ---")
+import logging
+logger = logging.getLogger(__name__)
+logger.info("--- collector.py 스크립트 시작됨 ---")
 import pandas as pd
 from binance.client import Client
 import influxdb_client
@@ -38,14 +41,19 @@ class BinanceDataCollector:
         """
         self.binance_client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
         try:
-            self.influx_client = influxdb_client.InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG)
+            self.influx_client = influxdb_client.InfluxDBClient(
+                url=INFLUXDB_URL, 
+                token=INFLUXDB_TOKEN, 
+                org=INFLUXDB_ORG,
+                timeout=30_000  # 타임아웃을 30초로 설정
+            )
             self.influx_write_api = self.influx_client.write_api(write_options=SYNCHRONOUS)
             self.influx_bucket = INFLUXDB_BUCKET
             # InfluxDB 연결 테스트 (선택 사항, 서버 다운 시 빠른 실패를 위해)
             self.influx_client.ping()
-            print("Successfully connected to InfluxDB.")
+            logger.info("InfluxDB에 성공적으로 연결되었습니다.")
         except Exception as e:
-            print(f"Error connecting to InfluxDB: {e}. InfluxDB operations will be disabled.")
+            logger.error(f"InfluxDB 연결 오류: {e}. InfluxDB 관련 작업이 비활성화됩니다.")
             self.influx_client = None
             self.influx_write_api = None
             self.influx_bucket = None
@@ -75,38 +83,50 @@ class BinanceDataCollector:
             df[col] = pd.to_numeric(df[col])
         
         df.set_index('timestamp', inplace=True)
+        df['symbol'] = symbol  # Add symbol column
         print(f"Successfully fetched {len(df)} records.")
-        return df[['open', 'high', 'low', 'close', 'volume']]
+        return df[['open', 'high', 'low', 'close', 'volume', 'symbol']]
 
-    def save_to_influxdb(self, df, measurement_name):
+    def save_to_influxdb(self, df, measurement_name, chunk_size=5000):
         """
-        데이터프레임을 InfluxDB에 저장합니다.
+        데이터프레임을 InfluxDB에 청크 단위로 저장합니다.
 
         :param df: (pd.DataFrame) 저장할 데이터. 'symbol' 컬럼을 포함해야 합니다.
         :param measurement_name: (str) InfluxDB의 measurement 이름
+        :param chunk_size: (int) 한 번에 저장할 데이터 행 수
         :return: (bool) 저장 성공 여부
         """
         if not self.influx_write_api:
             print("InfluxDB client not available. Skipping save operation.")
             return False
-            
+
         if 'symbol' not in df.columns:
             print("Error: 'symbol' column not found in DataFrame. Cannot save to InfluxDB with symbol tag.")
             return False
 
-        print(f"Saving {len(df)} records to InfluxDB measurement '{measurement_name}' in bucket '{self.influx_bucket}'...")
-        try:
-            self.influx_write_api.write(
-                bucket=self.influx_bucket,
-                record=df,
-                data_frame_measurement_name=measurement_name,
-                data_frame_tag_columns=['symbol']
-            )
-            print("Save to InfluxDB successful.")
-            return True
-        except Exception as e:
-            print(f"Error saving to InfluxDB: {e}")
-            return False
+        num_chunks = (len(df) - 1) // chunk_size + 1
+        print(f"Saving {len(df)} records to InfluxDB in {num_chunks} chunk(s) of size {chunk_size}... (Bucket: {self.influx_bucket})")
+
+        for i in range(num_chunks):
+            start_index = i * chunk_size
+            end_index = start_index + chunk_size
+            df_chunk = df.iloc[start_index:end_index]
+
+            print(f"  - Saving chunk {i + 1}/{num_chunks} ({len(df_chunk)} records)...")
+            try:
+                self.influx_write_api.write(
+                    bucket=self.influx_bucket,
+                    record=df_chunk,
+                    data_frame_measurement_name=measurement_name,
+                    data_frame_tag_columns=['symbol']
+                )
+            except Exception as e:
+                print(f"Error saving chunk {i + 1} to InfluxDB: {e}")
+                # 실패 시 관련 정보와 함께 False 반환
+                return False
+
+        print("All chunks saved to InfluxDB successfully.")
+        return True
 
     def start_websocket_stream(self, symbol, on_message_callback):
         """
@@ -125,39 +145,54 @@ class BinanceDataCollector:
         pass
 
 if __name__ == '__main__':
+    # --- 초기화 ---
+    print("--- 데이터 파이프라인 테스트 시작 ---")
+    notifier = TelegramNotifier()
     collector = BinanceDataCollector()
 
-    # --- 과거 데이터 수집 및 저장 예제 ---
-    # 1. BTC/USDT 1시간 봉 데이터를 2023년 1월 1일부터 가져오기
-    btc_df = collector.fetch_historical_data('BTCUSDT', '1h', '1 Jan, 2023')
-    print("\n--- Fetched Data Sample ---")
-    print(btc_df.head())
-
-    # 2. InfluxDB에 저장하기 위해 'symbol' 컬럼 추가
-    btc_df['symbol'] = 'BTCUSDT'
-    
-    # 3. InfluxDB에 저장 (InfluxDB 서버가 실행 중이고, credentials.py에 정보가 정확해야 함)
-    if collector.influx_write_api: # InfluxDB 연결이 성공했을 경우에만 시도
-        save_successful = collector.save_to_influxdb(btc_df, 'crypto_prices_hourly')
-        
-        # 4. 텔레그램 알림 (선택 사항)
-        #    config/credentials.py에 TELEGRAM_BOT_TOKEN 및 TELEGRAM_CHAT_ID 설정 필요
-        notifier = TelegramNotifier() # 봇 토큰 등이 없으면 내부적으로 비활성화됨
-        if save_successful:
-            notifier.send_message(
-                f"Project ART: Successfully saved {len(btc_df)} records for BTCUSDT to InfluxDB."
-            )
-        else:
-            notifier.send_message(
-                f"Project ART: Failed to save BTCUSDT data to InfluxDB. Check logs."
-            )
+    # InfluxDB 연결 상태 확인
+    if not collector.influx_write_api:
+        message = "Project ART: InfluxDB 클라이언트가 초기화되지 않았습니다. 데이터 저장 및 알림을 건너뜁니다."
+        print(message)
+        # notifier.send_message(message) # InfluxDB 연결 실패도 알릴 수 있음
     else:
-        print("\n--- InfluxDB client not initialized. Skipping save and notification. ---")
+        # --- 과거 데이터 수집 및 저장 예제 ---
+        try:
+            # 1. BTC/USDT 1시간 봉 데이터를 2023년 1월 1일부터 가져오기
+            print("\n[1/3] 바이낸스에서 과거 데이터 수집 시작...")
+            btc_df = collector.fetch_historical_data('BTCUSDT', '1h', '1 Jan, 2023')
+            
+            if not btc_df.empty:
+                print("\n--- 수집된 데이터 샘플 ---")
+                print(btc_df.head())
 
+                # 2. InfluxDB에 저장
+                print("\n[2/3] InfluxDB에 데이터 저장 시작...")
+                save_successful = collector.save_to_influxdb(btc_df, 'crypto_prices_hourly')
 
-    # --- 실시간 데이터 스트림 예제 (변경 없음) ---
-    def handle_message(msg):
-        # 실제로는 여기서 메시지를 처리하여 SignalEvent를 생성하거나 DB에 저장
-        print(f"Received WebSocket message: {msg}")
+                # 3. 텔레그램 알림
+                print("\n[3/3] 결과 텔레그램 알림 발송...")
+                if save_successful:
+                    message = f"✅ [성공] Project ART: BTCUSDT 데이터 {len(btc_df)}건을 InfluxDB에 성공적으로 저장했습니다."
+                    notifier.send_message(message)
+                else:
+                    message = f"❌ [실패] Project ART: BTCUSDT 데이터를 InfluxDB에 저장하는 데 실패했습니다. 로그를 확인해주세요."
+                    notifier.send_message(message)
+                print("알림 발송 완료.")
+            else:
+                print("수집된 데이터가 없습니다. 작업을 중단합니다.")
 
-    collector.start_websocket_stream('btcusdt', handle_message)
+        except Exception as e:
+            print(f"\n--- 에러 발생 ---")
+            error_message = f"❌ [에러] Project ART: 데이터 처리 중 예외가 발생했습니다: {e}"
+            print(error_message)
+            notifier.send_message(error_message)
+
+    print("\n--- 데이터 파이프라인 테스트 종료 ---")
+
+    # --- 실시간 데이터 스트림 예제 (참고용) ---
+    # def handle_message(msg):
+    #     # 실제로는 여기서 메시지를 처리하여 SignalEvent를 생성하거나 DB에 저장
+    #     print(f"Received WebSocket message: {msg}")
+    #
+    # collector.start_websocket_stream('btcusdt', handle_message)
