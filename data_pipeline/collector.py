@@ -4,6 +4,7 @@ logger = logging.getLogger(__name__)
 logger.info("--- collector.py 스크립트 시작됨 ---")
 import pandas as pd
 from binance.client import Client
+from binance.exceptions import BinanceAPIException
 import influxdb_client
 from influxdb_client.client.write_api import SYNCHRONOUS
 import os
@@ -61,16 +62,32 @@ class BinanceDataCollector:
     def fetch_historical_data(self, symbol, interval, start_str, end_str=None):
         """
         지정된 기간의 과거 OHLCV 데이터를 바이낸스에서 가져옵니다.
-
+        (에러 핸들링 강화)
         :param symbol: (str) 거래 쌍 (예: 'BTCUSDT')
         :param interval: (str) 데이터 간격 (예: '1h', '4h', '1d')
-        :param start_str: (str) 시작 날짜 (예: '1 Jan, 2020')
+        :param start_str: (str) 시작 날짜 (예: '1 Jan, 2020', '2022-01-01')
         :param end_str: (str, optional) 종료 날짜. 기본값은 None (현재까지).
-        :return: (pd.DataFrame) OHLCV 데이터
+        :return: (pd.DataFrame or None) OHLCV 데이터 또는 실패 시 None
         """
         print(f"Fetching historical data for {symbol} from {start_str} to {end_str or 'now'}...")
-        klines = self.binance_client.get_historical_klines(symbol, interval, start_str, end_str)
-        
+        try:
+            klines = self.binance_client.get_historical_klines(symbol, interval, start_str, end_str)
+            if not klines:
+                logger.warning(f"No data returned from Binance for {symbol} with interval {interval}.")
+                return pd.DataFrame() # 빈 데이터프레임 반환
+
+        except BinanceAPIException as e:
+            logger.error(f"Binance API 에러 발생 (symbol={symbol}, interval={interval}): {e}")
+            # 흔한 에러에 대한 사용자 친화적 메시지 추가
+            if e.code == -1121:
+                logger.error("API 에러 코드 -1121: 잘못된 심볼(symbol)일 수 있습니다. 확인해주세요.")
+            elif e.code == -1103:
+                 logger.error("API 에러 코드 -1103: 너무 많은 파라미터가 전송되었습니다. 코드 확인이 필요합니다.")
+            return None
+        except Exception as e:
+            logger.error(f"데이터 수집 중 예기치 않은 에러 발생: {e}", exc_info=True)
+            return None
+
         df = pd.DataFrame(klines, columns=[
             'timestamp', 'open', 'high', 'low', 'close', 'volume',
             'close_time', 'quote_asset_volume', 'number_of_trades',
@@ -87,12 +104,13 @@ class BinanceDataCollector:
         print(f"Successfully fetched {len(df)} records.")
         return df[['open', 'high', 'low', 'close', 'volume', 'symbol']]
 
-    def save_to_influxdb(self, df, measurement_name, chunk_size=5000):
+    def save_to_influxdb(self, df, measurement_name, time_precision='s', chunk_size=5000):
         """
         데이터프레임을 InfluxDB에 청크 단위로 저장합니다.
 
         :param df: (pd.DataFrame) 저장할 데이터. 'symbol' 컬럼을 포함해야 합니다.
         :param measurement_name: (str) InfluxDB의 measurement 이름
+        :param time_precision: (str) 시간 정밀도 ('s', 'ms', 'us', 'ns')
         :param chunk_size: (int) 한 번에 저장할 데이터 행 수
         :return: (bool) 저장 성공 여부
         """
@@ -118,7 +136,8 @@ class BinanceDataCollector:
                     bucket=self.influx_bucket,
                     record=df_chunk,
                     data_frame_measurement_name=measurement_name,
-                    data_frame_tag_columns=['symbol']
+                    data_frame_tag_columns=['symbol'],
+                    time_precision=time_precision
                 )
             except Exception as e:
                 print(f"Error saving chunk {i + 1} to InfluxDB: {e}")
@@ -213,52 +232,55 @@ class BinanceDataCollector:
                 return pd.DataFrame()
                 
         except Exception as e:
-            logger.error(f"Error querying data from InfluxDB: {str(e)}", exc_info=True)
+            logger.error(f"Error querying or processing data from InfluxDB: {str(e)}", exc_info=True)
             return pd.DataFrame()
 
 if __name__ == '__main__':
     # --- 초기화 ---
-    print("--- 데이터 파이프라인 테스트 시작 ---")
+    print("--- 데이터 파이프라인 실행 --- ")
     notifier = TelegramNotifier()
     collector = BinanceDataCollector()
 
-    # InfluxDB 연결 상태 확인
-    if not collector.influx_write_api:
-        message = "Project ART: InfluxDB 클라이언트가 초기화되지 않았습니다. 데이터 저장 및 알림을 건너뜁니다."
-        print(message)
-        # notifier.send_message(message) # InfluxDB 연결 실패도 알릴 수 있음
-    else:
-        # --- 과거 데이터 수집 및 저장 예제 ---
-        try:
-            # 1. BTC/USDT 1시간 봉 데이터를 2023년 1월 1일부터 가져오기
-            print("\n[1/3] 바이낸스에서 과거 데이터 수집 시작...")
-            btc_df = collector.fetch_historical_data('BTCUSDT', '1h', '1 Jan, 2023')
+    try:
+        # --- 데이터 수집 설정 ---
+        symbol_to_collect = 'BTCUSDT'
+        timeframes_to_collect = ['1h', '4h', '1d']
+        start_date_to_collect = '1 Jan, 2020' # 데이터 수집 시작일
+        # end_date_to_collect = None # None으로 설정 시 현재까지 데이터를 가져옴
+
+        print(f"\n--- 과거 데이터 수집 시작: {symbol_to_collect} ---")
+        for tf in timeframes_to_collect:
+            print(f"  - 타임프레임: {tf}")
+            measurement_name = f"{symbol_to_collect}_{tf}"
+
+            historical_data = collector.fetch_historical_data(
+                symbol_to_collect, 
+                tf, 
+                start_date_to_collect, 
+                end_str=None # 현재까지 데이터 수집
+            )
             
-            if not btc_df.empty:
-                print("\n--- 수집된 데이터 샘플 ---")
-                print(btc_df.head())
-
-                # 2. InfluxDB에 저장
-                print("\n[2/3] InfluxDB에 데이터 저장 시작...")
-                save_successful = collector.save_to_influxdb(btc_df, 'crypto_prices_hourly')
-
-                # 3. 텔레그램 알림
-                print("\n[3/3] 결과 텔레그램 알림 발송...")
-                if save_successful:
-                    message = f"✅ [성공] Project ART: BTCUSDT 데이터 {len(btc_df)}건을 InfluxDB에 성공적으로 저장했습니다."
-                    notifier.send_message(message)
+            if historical_data is not None and not historical_data.empty:
+                print(f"    성공적으로 {len(historical_data)}개의 과거 데이터를 가져왔습니다.")
+                # InfluxDB에 저장 (save_to_influxdb 메소드 사용)
+                if collector.save_to_influxdb(historical_data, measurement_name):
+                    print(f"    {measurement_name}에 데이터 저장 성공.")
+                    notifier.send_message(f"{symbol_to_collect} {tf} 데이터 {len(historical_data)}개 InfluxDB 저장 완료")
                 else:
-                    message = f"❌ [실패] Project ART: BTCUSDT 데이터를 InfluxDB에 저장하는 데 실패했습니다. 로그를 확인해주세요."
-                    notifier.send_message(message)
-                print("알림 발송 완료.")
+                    print(f"    {measurement_name}에 데이터 저장 실패.")
+                    notifier.send_message(f"[오류] {symbol_to_collect} {tf} 데이터 InfluxDB 저장 실패")
             else:
-                print("수집된 데이터가 없습니다. 작업을 중단합니다.")
+                print(f"    {symbol_to_collect} ({tf}) 과거 데이터 수집에 실패했거나 데이터가 없습니다.")
+                notifier.send_message(f"[경고] {symbol_to_collect} ({tf}) 데이터 수집 실패 또는 데이터 없음")
 
-        except Exception as e:
-            print(f"\n--- 에러 발생 ---")
-            error_message = f"❌ [에러] Project ART: 데이터 처리 중 예외가 발생했습니다: {e}"
-            print(error_message)
-            notifier.send_message(error_message)
+        print("\n--- 모든 과거 데이터 수집 및 저장 작업 완료 ---")
+        notifier.send_message("모든 과거 데이터 수집 및 저장 작업이 완료되었습니다.")
+
+    except Exception as e:
+        print(f"\n--- 에러 발생 ---")
+        error_message = f"❌ [에러] Project ART: 데이터 처리 중 예외가 발생했습니다: {e}"
+        print(error_message)
+        notifier.send_message(error_message)
 
     print("\n--- 데이터 파이프라인 테스트 종료 ---")
 
