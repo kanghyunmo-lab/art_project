@@ -12,6 +12,7 @@ config/credentials.py
 *.db
 *.pkl
 *.hdf5
+*.whl
 
 # IDE
 .vscode/
