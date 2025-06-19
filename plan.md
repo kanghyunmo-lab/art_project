@@ -38,7 +38,7 @@
 - [x] collector.py 스크립트 수정(데이터 수집 코드 활성화)
 - [x] collector.py의 query_data_from_influxdb 메소드의 SyntaxError/들여쓰기 문제 해결
 - [~] 피처 엔지니어링 스크립트(features/build_features.py) 개선 (다중 타임프레임 통합/정렬, 기술적 지표 추가)
-- [ ] `build_features.py` 내 look-ahead bias 검토 및 수정 (`pd.merge_asof` 적용)
+- [x] `build_features.py` 내 look-ahead bias 검토 및 수정 (`pd.merge_asof` 적용)
 - [~] 삼중 장벽 레이블링 함수(get_triple_barrier_labels) 검토 (현재 `build_features.py`에 구현됨, 필요시 위치 조정)
 - [ ] 예측 모델(v1: XGBoost/LightGBM) 훈련 및 저장, 워크 포워드 검증
 - [ ] 리스크 관리 모듈 및 단위 테스트 작성

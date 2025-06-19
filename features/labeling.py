@@ -167,7 +167,6 @@ def create_events(df_ohlcv):
 
 # --- 예시 사용 ---
 if __name__ == '__main__':
-    print("--- labeling.py script execution started ---")
     # 테스트를 위해 labeling.py를 직접 실행할 경우 config.py 경로 문제 발생 가능
     # 프로젝트 루트에서 python -m features.labeling 등으로 실행하면
     # from config.config import TRADING_PARAMS 구문이 정상 동작합니다.
