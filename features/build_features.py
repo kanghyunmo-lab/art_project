@@ -42,29 +42,6 @@ def get_daily_volatility(close, lookback=100):
     df0 = df0.ewm(span=lookback).std()
     return df0
 
-def get_triple_barrier_labels(close, events, pt_sl, molecule):
-    store = []
-    for i in molecule:
-        trgt_val = events.loc[i, 'trgt']
-        trgt_upper = trgt_val * pt_sl[0]
-        trgt_lower = -trgt_val * pt_sl[1]
-        path = close[i:events.loc[i, 't1']]
-        upper_barrier_touch_time = path[path > close[i] + trgt_upper].index.min()
-        lower_barrier_touch_time = path[path < close[i] - trgt_lower].index.min()
-        earliest_touch_time = pd.Series([lower_barrier_touch_time, upper_barrier_touch_time, events.loc[i, 't1']]).dropna().min()
-        if earliest_touch_time == upper_barrier_touch_time:
-            bin_label = 1
-        elif earliest_touch_time == lower_barrier_touch_time:
-            bin_label = -1
-        else:
-            bin_label = 0
-        out = pd.DataFrame({
-            'ret': path.loc[earliest_touch_time] / close[i] - 1,
-            'bin': bin_label
-        }, index=[i])
-        store.append(out)
-    return pd.concat(store)
-
 def build_feature_matrix(symbol, start_date, end_date):
     reader = InfluxReader()
     timeframes = ['1h', '4h', '1d']
