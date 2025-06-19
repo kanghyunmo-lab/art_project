@@ -144,6 +144,78 @@ class BinanceDataCollector:
         # bsm.start()
         pass
 
+    def query_data_from_influxdb(self, bucket, measurement, symbol, start_time=None, stop_time=None):
+        """
+        InfluxDB에서 시계열 데이터를 조회하여 Pandas DataFrame으로 반환합니다.
+
+        :param bucket: (str) 데이터를 조회할 버킷 이름
+        :param measurement: (str) 조회할 measurement
+        :param symbol: (str) 필터링할 'symbol' 태그 값 (예: 'BTCUSDT')
+        :param start_time: (str 또는 datetime) 조회 시작 시간 (예: "-30d", "2023-01-01T00:00:00Z")
+        :param stop_time: (str 또는 datetime) 조회 종료 시간 (예: "now()", "2023-12-31T23:59:59Z")
+        :return: (pd.DataFrame) 조회된 데이터. OHLCV 컬럼과 datetime 인덱스를 가집니다.
+        """
+        if not self.influx_client:
+            logger.error("InfluxDB client is not available.")
+            return pd.DataFrame()
+
+        # 파라미터 기본값 설정
+        start_param = start_time if start_time is not None else "-30d"
+        stop_param = stop_time if stop_time is not None else "now()"
+
+        # datetime 객체가 전달된 경우 ISO 형식으로 변환
+        if hasattr(start_param, 'isoformat'):
+            start_param = f"{start_param.isoformat()}Z"
+        if hasattr(stop_param, 'isoformat'):
+            stop_param = f"{stop_param.isoformat()}Z"
+
+        logger.info(f"Querying {measurement} data for {symbol} from {start_param} to {stop_param}")
+        
+        query_api = self.influx_client.query_api()
+
+        flux_query = f'''
+        from(bucket: "{bucket}")
+          |> range(start: {start_param}, stop: {stop_param})
+          |> filter(fn: (r) => r._measurement == "{measurement}")
+          |> filter(fn: (r) => r.symbol == "{symbol}")
+          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+          |> keep(columns: ["_time", "open", "high", "low", "close", "volume"])
+          |> sort(columns: ["_time"], desc: false)
+        '''
+
+        logger.debug(f"Flux query: {flux_query}")
+
+        try:
+            logger.info(f"Executing query for {symbol}...")
+            result_df = query_api.query_data_frame(query=flux_query)
+            
+            if result_df.empty:
+                logger.warning(f"No data returned from InfluxDB for {symbol} in {measurement}")
+                return pd.DataFrame()
+
+
+            # 데이터프레임 정리
+            if '_time' in result_df.columns:
+                result_df.rename(columns={'_time': 'timestamp'}, inplace=True)
+                result_df.set_index('timestamp', inplace=True)
+                # 시간대 정보가 있으면 제거 (backtrader 호환성을 위해)
+                if hasattr(result_df.index, 'tz') and result_df.index.tz is not None:
+                    result_df.index = result_df.index.tz_convert(None)
+                
+                # 필요한 컬럼만 선택
+                required_columns = ['open', 'high', 'low', 'close', 'volume']
+                result_df = result_df[[col for col in required_columns if col in result_df.columns]]
+                
+                logger.info(f"Successfully retrieved {len(result_df)} records for {symbol} from {result_df.index.min()} to {result_df.index.max()}")
+                return result_df
+            else:
+                logger.error("'timestamp' column not found in query results")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            logger.error(f"Error querying data from InfluxDB: {str(e)}", exc_info=True)
+            return pd.DataFrame()
+
 if __name__ == '__main__':
     # --- 초기화 ---
     print("--- 데이터 파이프라인 테스트 시작 ---")
