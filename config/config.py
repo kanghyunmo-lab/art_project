@@ -79,7 +79,7 @@ INFLUXDB_PARAMS = {
     'funding_rate_bucket': 'funding_rates',
     'funding_rate_measurement': 'funding_rate_history',
     # 기존 collector.py에서 사용하는 버킷/measurement와 충돌 방지
-    'ohlcv_bucket': 'crypto_data',
+    'ohlcv_bucket': 'art_project', # 사용자의 실제 OHLCV 데이터 버킷
     'ohlcv_measurement': 'ohlcv',
 }
 

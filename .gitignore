@@ -17,3 +17,14 @@ config/credentials.py
 # IDE
 .vscode/
 .idea/
+
+# Logs
+*.log
+
+# Temporary and Test files
+_temp_*.py
+test_*.py
+verify_*.py
+
+# Windsurf
+.windsurf/
