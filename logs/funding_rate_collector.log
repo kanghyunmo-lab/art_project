@@ -1,0 +1,91 @@
+2025-06-20 20:31:42,274 - INFO - 펀딩 비율 수집 시작: BTCUSDT
+2025-06-20 20:31:43,613 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-20 20:31:43,616 - INFO - BTCUSDT 펀딩 비율 기록 (최근 10개):
+2025-06-20 20:31:43,617 - INFO -   시간: 2025-06-17 08:00:00 UTC, 비율: 0.00005776, 마크 가격: 106711.10000000
+2025-06-20 20:31:43,617 - INFO -   시간: 2025-06-17 16:00:00 UTC, 비율: 0.00002211, 마크 가격: 104203.95066304
+2025-06-20 20:31:43,618 - INFO -   시간: 2025-06-18 00:00:00 UTC, 비율: -0.00001752, 마크 가격: 104508.00000000
+2025-06-20 20:31:43,618 - INFO -   시간: 2025-06-18 08:00:00 UTC, 비율: 0.00003695, 마크 가격: 104925.60000000
+2025-06-20 20:31:43,620 - INFO -   시간: 2025-06-18 16:00:00 UTC, 비율: 0.00006692, 마크 가격: 104751.91415217
+2025-06-20 20:31:43,620 - INFO -   시간: 2025-06-19 00:00:00 UTC, 비율: 0.00000845, 마크 가격: 104836.47953623
+2025-06-20 20:31:43,621 - INFO -   시간: 2025-06-19 08:00:00 UTC, 비율: 0.00000616, 마크 가격: 104593.47301449
+2025-06-20 20:31:43,621 - INFO -   시간: 2025-06-19 16:00:00 UTC, 비율: 0.00002396, 마크 가격: 104055.20000000
+2025-06-20 20:31:43,621 - INFO -   시간: 2025-06-20 00:00:00 UTC, 비율: 0.00003565, 마크 가격: 104612.28734221
+2025-06-20 20:31:43,621 - INFO -   시간: 2025-06-20 08:00:00 UTC, 비율: 0.00007862, 마크 가격: 105763.50000000
+2025-06-20 20:31:43,738 - ERROR - InfluxDB 쓰기 중 오류 발생: (404)
+Reason: Not Found
+HTTP response headers: HTTPHeaderDict({'Content-Type': 'application/json; charset=utf-8', 'X-Influxdb-Build': 'OSS', 'X-Influxdb-Version': 'v2.7.12', 'X-Platform-Error-Code': 'not found', 'Date': 'Fri, 20 Jun 2025 11:31:43 GMT', 'Content-Length': '67'})
+HTTP response body: {"code":"not found","message":"bucket \"funding_rates\" not found"}
+
+2025-06-20 20:31:43,739 - ERROR - BTCUSDT 펀딩 비율 데이터를 InfluxDB에 저장하는데 실패했습니다.
+2025-06-20 20:31:43,739 - INFO - 펀딩 비율 수집 완료: BTCUSDT
+2025-06-20 20:32:06,484 - INFO - 펀딩 비율 수집 시작: BTCUSDT
+2025-06-20 20:32:07,868 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-20 20:32:07,871 - INFO - BTCUSDT 펀딩 비율 기록 (최근 10개):
+2025-06-20 20:32:07,871 - INFO -   시간: 2025-06-17 08:00:00 UTC, 비율: 0.00005776, 마크 가격: 106711.10000000
+2025-06-20 20:32:07,871 - INFO -   시간: 2025-06-17 16:00:00 UTC, 비율: 0.00002211, 마크 가격: 104203.95066304
+2025-06-20 20:32:07,871 - INFO -   시간: 2025-06-18 00:00:00 UTC, 비율: -0.00001752, 마크 가격: 104508.00000000
+2025-06-20 20:32:07,871 - INFO -   시간: 2025-06-18 08:00:00 UTC, 비율: 0.00003695, 마크 가격: 104925.60000000
+2025-06-20 20:32:07,872 - INFO -   시간: 2025-06-18 16:00:00 UTC, 비율: 0.00006692, 마크 가격: 104751.91415217
+2025-06-20 20:32:07,872 - INFO -   시간: 2025-06-19 00:00:00 UTC, 비율: 0.00000845, 마크 가격: 104836.47953623
+2025-06-20 20:32:07,872 - INFO -   시간: 2025-06-19 08:00:00 UTC, 비율: 0.00000616, 마크 가격: 104593.47301449
+2025-06-20 20:32:07,872 - INFO -   시간: 2025-06-19 16:00:00 UTC, 비율: 0.00002396, 마크 가격: 104055.20000000
+2025-06-20 20:32:07,872 - INFO -   시간: 2025-06-20 00:00:00 UTC, 비율: 0.00003565, 마크 가격: 104612.28734221
+2025-06-20 20:32:07,872 - INFO -   시간: 2025-06-20 08:00:00 UTC, 비율: 0.00007862, 마크 가격: 105763.50000000
+2025-06-20 20:32:07,898 - INFO - InfluxDB 버킷 'funding_rates'이(가) 이미 존재합니다.
+2025-06-20 20:32:07,906 - ERROR - InfluxDB 쓰기 중 오류 발생: (404)
+Reason: Not Found
+HTTP response headers: HTTPHeaderDict({'Content-Type': 'application/json; charset=utf-8', 'X-Influxdb-Build': 'OSS', 'X-Influxdb-Version': 'v2.7.12', 'X-Platform-Error-Code': 'not found', 'Date': 'Fri, 20 Jun 2025 11:32:07 GMT', 'Content-Length': '67'})
+HTTP response body: {"code":"not found","message":"bucket \"funding_rates\" not found"}
+
+2025-06-20 20:32:07,906 - ERROR - BTCUSDT 펀딩 비율 데이터를 InfluxDB에 저장하는데 실패했습니다.
+2025-06-20 20:32:07,907 - INFO - 펀딩 비율 수집 완료: BTCUSDT
+2025-06-20 20:35:03,592 - INFO - 펀딩 비율 수집 시작: BTCUSDT
+2025-06-20 20:35:04,818 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-20 20:35:04,820 - INFO - BTCUSDT 펀딩 비율 기록 (최근 10개):
+2025-06-20 20:35:04,821 - INFO -   시간: 2025-06-17 08:00:00 UTC, 비율: 0.00005776, 마크 가격: 106711.10000000
+2025-06-20 20:35:04,821 - INFO -   시간: 2025-06-17 16:00:00 UTC, 비율: 0.00002211, 마크 가격: 104203.95066304
+2025-06-20 20:35:04,821 - INFO -   시간: 2025-06-18 00:00:00 UTC, 비율: -0.00001752, 마크 가격: 104508.00000000
+2025-06-20 20:35:04,821 - INFO -   시간: 2025-06-18 08:00:00 UTC, 비율: 0.00003695, 마크 가격: 104925.60000000
+2025-06-20 20:35:04,822 - INFO -   시간: 2025-06-18 16:00:00 UTC, 비율: 0.00006692, 마크 가격: 104751.91415217
+2025-06-20 20:35:04,822 - INFO -   시간: 2025-06-19 00:00:00 UTC, 비율: 0.00000845, 마크 가격: 104836.47953623
+2025-06-20 20:35:04,822 - INFO -   시간: 2025-06-19 08:00:00 UTC, 비율: 0.00000616, 마크 가격: 104593.47301449
+2025-06-20 20:35:04,822 - INFO -   시간: 2025-06-19 16:00:00 UTC, 비율: 0.00002396, 마크 가격: 104055.20000000
+2025-06-20 20:35:04,823 - INFO -   시간: 2025-06-20 00:00:00 UTC, 비율: 0.00003565, 마크 가격: 104612.28734221
+2025-06-20 20:35:04,823 - INFO -   시간: 2025-06-20 08:00:00 UTC, 비율: 0.00007862, 마크 가격: 105763.50000000
+2025-06-20 20:35:04,848 - INFO - InfluxDB 버킷 'funding_rates'이(가) 'art_project' 조직 내에 존재하지 않습니다. 새로 생성합니다.
+2025-06-20 20:35:04,891 - INFO - InfluxDB 버킷 'funding_rates' (ID: 6c7be70525990c38)이(가) 'art_project' 조직 내에 성공적으로 생성되었습니다.
+2025-06-20 20:35:05,247 - INFO - InfluxDB에 10개 BTCUSDT 펀딩 비율 데이터 쓰기 완료. 버킷: funding_rates, 측정: funding_rate_history
+2025-06-20 20:35:05,247 - INFO - 펀딩 비율 수집 완료: BTCUSDT
+2025-06-20 23:37:00,675 - INFO - Funding rate collection process started for symbol: BTCUSDT, mode: recent
+2025-06-20 23:37:00,677 - INFO - Collecting recent 10 funding rate(s) for BTCUSDT...
+2025-06-20 23:37:02,279 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-20 23:37:02,285 - INFO - Fetched 10 records for recent mode.
+2025-06-20 23:37:02,287 - ERROR - Unexpected error (KeyError) on attempt 1/5 for write_to_influxdb: 'funding_rate_bucket'. Not retrying.
+2025-06-20 23:38:15,115 - INFO - Funding rate collection process started for symbol: BTCUSDT, mode: recent
+2025-06-20 23:38:15,116 - INFO - Collecting recent 10 funding rate(s) for BTCUSDT...
+2025-06-20 23:38:16,282 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-20 23:38:16,285 - INFO - Fetched 10 records for recent mode.
+2025-06-20 23:38:16,399 - INFO - InfluxDB에 10개 BTCUSDT 펀딩 비율 데이터 쓰기 완료. 버킷: funding_rates
+2025-06-20 23:38:16,400 - INFO - Successfully wrote 10 recent funding rates for BTCUSDT to InfluxDB.
+2025-06-20 23:38:16,400 - INFO - Funding rate collection process finished for symbol: BTCUSDT, mode: recent
+2025-06-20 23:38:54,808 - INFO - Funding rate collection process started for symbol: BTCUSDT, mode: recent
+2025-06-20 23:38:54,812 - INFO - Collecting recent 10 funding rate(s) for BTCUSDT...
+2025-06-20 23:38:56,390 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-20 23:38:56,393 - INFO - Fetched 10 records for recent mode.
+2025-06-20 23:38:56,433 - INFO - InfluxDB에 10개 BTCUSDT 펀딩 비율 데이터 쓰기 완료. 버킷: funding_rates
+2025-06-20 23:38:56,434 - INFO - Successfully wrote 10 recent funding rates for BTCUSDT to InfluxDB.
+2025-06-20 23:38:56,435 - INFO - Funding rate collection process finished for symbol: BTCUSDT, mode: recent
+2025-06-20 23:40:30,200 - INFO - Funding rate collection process started for symbol: BTCUSDT, mode: recent
+2025-06-20 23:40:30,201 - INFO - Collecting recent 10 funding rate(s) for BTCUSDT...
+2025-06-20 23:40:31,611 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-20 23:40:31,613 - INFO - Fetched 10 records for recent mode.
+2025-06-20 23:40:31,655 - INFO - InfluxDB에 10개 BTCUSDT 펀딩 비율 데이터 쓰기 완료. 버킷: funding_rates
+2025-06-20 23:40:31,656 - INFO - Successfully wrote 10 recent funding rates for BTCUSDT to InfluxDB.
+2025-06-20 23:40:31,657 - INFO - Funding rate collection process finished for symbol: BTCUSDT, mode: recent
+2025-06-20 23:41:20,593 - INFO - Funding rate collection process started for symbol: BTCUSDT, mode: recent
+2025-06-20 23:41:20,594 - INFO - Collecting recent 10 funding rate(s) for BTCUSDT...
+2025-06-20 23:41:21,814 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-20 23:41:21,818 - INFO - Fetched 10 records for recent mode.
+2025-06-20 23:41:21,869 - INFO - InfluxDB에 10개 BTCUSDT 펀딩 비율 데이터 쓰기 완료. 버킷: funding_rates
+2025-06-20 23:41:21,869 - INFO - Successfully wrote 10 recent funding rates for BTCUSDT to InfluxDB.
+2025-06-20 23:41:21,870 - INFO - Funding rate collection process finished for symbol: BTCUSDT, mode: recent
