@@ -1,7 +1,15 @@
 import pandas as pd
 import numpy as np
 import pandas_ta as ta # TA-Lib 대신 pandas-ta 임포트
-from config.config import TRADING_PARAMS, DATA_PARAMS # config.py에서 설정값 가져오기
+import os
+from config.config import TRADING_PARAMS, DATA_PARAMS, PATH_PARAMS # config.py에서 설정값 가져오기
+
+def generate_sample_data():
+    # This function is now a stub and not used for the main path.
+    # It's kept to avoid breaking any potential utility uses, though unlikely.
+    print("INFO: generate_sample_data is a stub and returns an empty DataFrame.")
+    return pd.DataFrame()
+
 
 # get_triple_barrier_labels 함수 (기존 코드 유지)
 def get_triple_barrier_labels(close, events, pt_sl, molecule):
@@ -165,45 +173,42 @@ def create_events(df_ohlcv):
     events_df.dropna(inplace=True) # trgt 또는 t1 계산 중 NaN 발생 가능성 제거
     return events_df
 
-# --- 예시 사용 ---
+
+# The following block executes when the script is run directly.
 if __name__ == '__main__':
-    # 테스트를 위해 labeling.py를 직접 실행할 경우 config.py 경로 문제 발생 가능
-    # 프로젝트 루트에서 python -m features.labeling 등으로 실행하면
-    # from config.config import TRADING_PARAMS 구문이 정상 동작합니다.
-
-    # slow_ma_period 만큼 데이터를 더 생성해야 SMA, ADX 계산시 NaN이 적게 나옴
-    num_total_data = TRADING_PARAMS['slow_ma_period'] + TRADING_PARAMS['adx_period'] + TRADING_PARAMS['num_candles_max_hold'] + 100 # 여유분
-    dates_extended = pd.date_range(start='2022-08-01', periods=num_total_data, freq='H')
-    data_extended = {
-        'open': np.random.uniform(20000, 21000, size=len(dates_extended)),
-        'high': np.random.uniform(20000, 21000, size=len(dates_extended)), # open/close 기반으로 재계산
-        'low': np.random.uniform(20000, 21000, size=len(dates_extended)),  # open/close 기반으로 재계산
-        'close': np.random.uniform(20000, 21000, size=len(dates_extended)),
-        'volume': np.random.uniform(100, 1000, size=len(dates_extended))
-    }
-    df_sample = pd.DataFrame(data_extended, index=dates_extended)
-    
-    # high, low 값 보정 (open/close 범위 내 있도록)
-    df_sample['high'] = df_sample[['open', 'close']].max(axis=1) + np.random.uniform(0, 50, size=len(dates_extended))
-    df_sample['low'] = df_sample[['open', 'close']].min(axis=1) - np.random.uniform(0, 50, size=len(dates_extended))
-
-    # SMA 값이 처음에는 NaN이므로, MA 크로스 신호가 나오려면 충분한 데이터 필요
-    # 의도적으로 MA 크로스 및 ADX 조건 만족하는 구간 생성 (테스트용)
-    cross_point = TRADING_PARAMS['slow_ma_period'] + 50
-    df_sample.loc[df_sample.index[cross_point - TRADING_PARAMS['fast_ma_period']: cross_point + 10], 'close'] *= 1.05 # Fast MA 상승 유도
-    df_sample.loc[df_sample.index[cross_point - TRADING_PARAMS['slow_ma_period']: cross_point + 10], 'close'] *= 0.98 # Slow MA 상대적 하락 유도
-    
-    # ADX 값 상승 유도 (변동성 증가)
-    trend_start_idx = TRADING_PARAMS['slow_ma_period'] + 30
-    trend_end_idx = trend_start_idx + 50
-    price_increase = np.linspace(0, 500, trend_end_idx - trend_start_idx)
-    df_sample.loc[df_sample.index[trend_start_idx:trend_end_idx], 'high'] += price_increase
-    df_sample.loc[df_sample.index[trend_start_idx:trend_end_idx], 'close'] += price_increase
-    df_sample.loc[df_sample.index[trend_start_idx:trend_end_idx], 'low'] += price_increase
-
-
+    print("--- Running labeling script with actual feature data ---")
+    # These TRADING_PARAMS and DATA_PARAMS are loaded from config.config at the top of the file.
     print(f"TRADING_PARAMS: {TRADING_PARAMS}")
     print(f"DATA_PARAMS: {DATA_PARAMS}")
+
+    feature_matrix_path = os.path.join(PATH_PARAMS['data_path'], 'processed', 'btcusdt_feature_matrix.parquet')
+    print(f"--- Loading feature matrix from: {feature_matrix_path} ---")
+    try:
+        df_features = pd.read_parquet(feature_matrix_path)
+    except FileNotFoundError:
+        print(f"ERROR: Feature matrix not found at '{feature_matrix_path}'")
+        print("Please run features/build_features.py first.")
+        exit(1)
+    except Exception as e:
+        print(f"ERROR: Could not load feature matrix: {e}")
+        exit(1)
+    
+    # Ensure timestamp is the index (build_features.py should already handle this)
+    if not isinstance(df_features.index, pd.DatetimeIndex):
+        if 'timestamp' in df_features.columns:
+            df_features.set_index('timestamp', inplace=True)
+            print("INFO: Set 'timestamp' column as DatetimeIndex for df_features.")
+        elif not isinstance(df_features.index, pd.DatetimeIndex):
+             print("ERROR: Loaded df_features.index is not a DatetimeIndex and 'timestamp' column not found for setting index.")
+             exit(1)
+
+    # df_sample is used by the subsequent original code (from original line 181 onwards).
+    # It should contain 'open', 'high', 'low', 'close', 'volume', 'atr' for the main timeframe.
+    # build_features.py ensures these columns are present for the primary timeframe.
+    df_sample = df_features.copy() 
+    
+    # The original script's main logic (starting with print of df_sample.shape at original line 181)
+    # continues below, now operating on the loaded df_sample.
     print(f"Initial df_sample.shape: {df_sample.shape}")
     print(f"Initial df_sample head:\n {df_sample.head()}")
 
@@ -223,3 +228,69 @@ if __name__ == '__main__':
             print("\nNo molecule_sample to test labeling.")
     else:
         print("\nNo events generated, skipping labeling test.")
+
+    # 최종 데이터프레임 생성 (피처 + 레이블)
+    # get_triple_barrier_labels 함수는 events_df가 비어있으면 빈 Series를 반환할 수 있으므로, 
+    # events_df가 비어있지 않을 때만 레이블링을 시도하고 데이터를 병합합니다.
+    if not events_df.empty:
+        labels = get_triple_barrier_labels(df_sample['close'], events_df, TRADING_PARAMS['pt_sl_multipliers'], events_df.index)
+        print(f"\nGenerated labels_df (shape: {labels.shape}):")
+        print(labels.head())
+
+        # 원본 데이터, 피처, 이벤트, 레이블을 모두 포함하는 최종 데이터프레임 생성
+        # 't1'과 'trgt'는 events_df에 이미 있으므로, labels만 병합합니다.
+        final_df = df_sample.join(events_df.drop(columns=['t1', 'trgt'], errors='ignore')).join(labels)
+        print("\nFinal DataFrame with features and labels (first 5 rows with no NaN):")
+        print(final_df.dropna().head())
+
+        # 데이터 저장
+        # Parquet 파일로 저장 (data/processed 폴더)
+        import os
+        # config.py의 PATH_PARAMS에서 'data_path'를 가져오고 'processed' 하위 폴더를 지정합니다.
+        output_dir = os.path.join(PATH_PARAMS['data_path'], 'processed') 
+        os.makedirs(output_dir, exist_ok=True)
+        final_df_with_labels = final_df
+        
+        # final_df_with_labels가 실제로 데이터를 가지고 있을 때만 저장 시도
+        if final_df_with_labels is not None and not final_df_with_labels.empty:
+            # output_dir은 이전에 PATH_PARAMS를 통해 정확히 정의되어 있어야 함
+            # (예: output_dir = os.path.join(PATH_PARAMS['data_path'], 'processed'))
+            # (예: os.makedirs(output_dir, exist_ok=True)도 이미 호출됨)
+            output_path = os.path.join(output_dir, 'labeled_btcusdt_data.parquet')
+
+            # --- 여기서부터 디버깅 코드 ---
+            print(f"Attempting to save to: {output_path}")
+            print(f"Output directory: {output_dir}")
+            
+            if not os.path.exists(output_dir):
+                print(f"Output directory {output_dir} does NOT exist.")
+                try:
+                    os.makedirs(output_dir, exist_ok=True) # 필요시 생성
+                    print(f"Created directory: {output_dir}")
+                except Exception as e:
+                    print(f"Error creating directory {output_dir}: {e}")
+            elif not os.path.isdir(output_dir):
+                print(f"Error: {output_dir} exists but is NOT a directory.")
+            else:
+                print(f"Output directory {output_dir} exists and is a directory.")
+                
+            temp_file_path = os.path.join(output_dir, "temp_permission_check.tmp")
+            try:
+                with open(temp_file_path, "w") as f:
+                    f.write("test")
+                os.remove(temp_file_path)
+                print(f"Successfully created and deleted a temporary file in {output_dir}. Write permission seems OK.")
+            except Exception as e:
+                print(f"Failed to create/delete a temporary file in {output_dir}. Write permission issue likely: {e}")
+            # --- 여기까지 디버깅 코드 ---
+
+            print(f"--- Saving labeled data to: {output_path} ---")
+            try:
+                final_df_with_labels.to_parquet(output_path, index=True)
+                print(f"--- Successfully saved labeled data to {output_path} ---")
+            except Exception as e:
+                print(f"[Error] Failed to save data to Parquet: {e}")
+        else:
+            print("--- No data to save (final_df_with_labels is empty or None after processing events) ---")
+    else: # events_df.empty 경우
+        print("--- No events were generated, so no labels were created or saved. ---")
