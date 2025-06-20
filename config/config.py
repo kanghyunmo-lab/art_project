@@ -52,7 +52,7 @@ TRADING_PARAMS = {
     'fast_ma_period': 20,
     'slow_ma_period': 60,
     'adx_period': 14,
-    'adx_threshold': 25, # ADX 추세 강도 임계값
+    'adx_threshold': 20,  # lowered from 25 for Experiment 1 (ADX 추세 강도 임계값)
 
     # Volatility & Barrier Definition
     'atr_period_for_trgt': 20, # trgt 계산용 ATR 기간
