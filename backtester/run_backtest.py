@@ -1,242 +1,294 @@
-import backtrader as bt
-import pandas as pd
-import numpy as np
-import pickle
+# backtester/run_backtest.py
 import os
 import sys
-from datetime import datetime, timedelta
-from sklearn.ensemble import RandomForestClassifier # 예시 모델
+import logging
+import pandas as pd
+import joblib
+import backtrader as bt
+from datetime import datetime
 
-# 프로젝트 루트 경로를 기준으로 모듈을 임포트하기 위한 설정
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from features.build_features import add_technical_indicators
-from data_pipeline.collector import BinanceDataCollector # 데이터 로더 임포트
-from config.credentials import INFLUXDB_BUCKET # InfluxDB 버킷 정보 임포트
+# --- Project Setup ---
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# --- Project-specific Imports ---
+from config.config import BACKTESTER_PARAMS
+
+# --- Logging Setup ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - [%(funcName)s:%(lineno)d] - %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(PROJECT_ROOT, 'logs', 'backtest.log')),
+        logging.StreamHandler()
+    ]
+)
 
 class MLStrategy(bt.Strategy):
-    """
-    머신러닝 모델의 예측 신호에 따라 거래하는 backtrader 전략
-    """
     params = (
-        ('model_path', 'models/model_v1.pkl'), # 훈련된 모델 파일 경로
+        ('model', None),
+        ('data_df', None),
     )
 
     def __init__(self):
-        """
-        전략을 초기화하고, 훈련된 모델을 로드합니다.
-        """
-        self.dataclose = self.datas[0].close
+        if self.p.model is None:
+            raise ValueError("Model not provided to the strategy")
+        if self.p.data_df is None:
+            raise ValueError("Dataframe not provided to the strategy")
+
+        self.model = self.p.model
+        self.feature_columns = self.model.feature_names_in_
+        self.p.data_df.index = pd.to_datetime(self.p.data_df.index)
         self.order = None
-
-        # 훈련된 모델 로드
-        try:
-            with open(self.p.model_path, 'rb') as f:
-                self.model = pickle.load(f)
-            print(f"Model loaded successfully from {self.p.model_path}")
-        except FileNotFoundError:
-            print(f"Error: Model file not found at {self.p.model_path}. Please train and save the model first.")
-            self.model = None
-            self.cerebro.runstop() # 모델 없으면 중단
-
-    def next(self):
-        """
-        각 bar(시간 단계)마다 호출되는 메서드
-        """
-        if self.order or self.model is None:
-            return # 보류 중인 주문이 있거나 모델이 없으면 아무것도 하지 않음
-
-        # 현재까지의 데이터를 DataFrame으로 변환
-        # backtrader의 데이터를 pandas로 변환하기 위해 약간의 트릭이 필요
-        dates = [bt.num2date(self.datas[0].datetime[i]) for i in range(-len(self.datas[0]), 0)]
-        closes = self.datas[0].close.get(size=len(self.datas[0]))
-        df = pd.DataFrame({'close': closes}, index=pd.to_datetime(dates))
-
-        # 피처 엔지니어링
-        df_features = add_technical_indicators(df)
-        
-        # 마지막 행 (현재 시점)의 피처를 모델 입력으로 사용
-        current_features = df_features.iloc[-1:].drop(columns=['close'])
-        
-        if current_features.isnull().values.any():
-            return # 피처 계산에 충분한 데이터가 없으면 건너뛰기
-
-        # 모델 예측
-        prediction = self.model.predict(current_features)[0]
-
-        # 거래 로직
-        if not self.position: # 포지션이 없으면
-            if prediction == 1: # 매수 신호
-                print(f"{self.datas[0].datetime.date(0)}: BUY signal received. Creating order.")
-                self.order = self.buy()
-            elif prediction == -1: # 매도 신호
-                print(f"{self.datas[0].datetime.date(0)}: SELL signal received. Creating order.")
-                self.order = self.sell()
-        else: # 포지션이 있으면
-            if self.position.size > 0 and prediction == -1: # 롱 포지션 + 매도 신호
-                print(f"{self.datas[0].datetime.date(0)}: CLOSE LONG signal received. Closing position.")
-                self.order = self.close()
-            elif self.position.size < 0 and prediction == 1: # 숏 포지션 + 매수 신호
-                print(f"{self.datas[0].datetime.date(0)}: CLOSE SHORT signal received. Closing position.")
-                self.order = self.close()
+        self.position_size = 0
+        self.leverage = 1
+        self.entry_price = None
+        self.liquidation_buffer = 0.005  # 0.5% 여유 (강제청산 방지)
+        self.stop_loss = None
+        self.trailing_stop = None
+        self.highest_price = None
+        self.lowest_price = None
+        self.max_loss_pct = 0.05  # 최대 5% 손실 제한
+        self.atr_mult = 2  # ATR 손절 배수
 
     def notify_order(self, order):
         if order.status in [order.Submitted, order.Accepted]:
             return
-
         if order.status in [order.Completed]:
             if order.isbuy():
-                print(f'BUY EXECUTED, Price: {order.executed.price:.2f}, Cost: {order.executed.value:.2f}, Comm: {order.executed.comm:.2f}')
-            elif order.issell():
-                print(f'SELL EXECUTED, Price: {order.executed.price:.2f}, Cost: {order.executed.value:.2f}, Comm: {order.executed.comm:.2f}')
-            self.bar_executed = len(self)
-
+                self.position_size = 1
+                self.entry_price = order.executed.price
+                self.highest_price = order.executed.price
+                self.lowest_price = order.executed.price
+                self.log(f'BUY EXECUTED - Price: {order.executed.price:.2f}, Cost: {order.executed.value:.2f}, Commission: {order.executed.comm:.2f}, Leverage: {self.leverage}x')
+            else:
+                self.position_size = 0
+                self.entry_price = None
+                self.stop_loss = None
+                self.trailing_stop = None
+                self.highest_price = None
+                self.lowest_price = None
+                self.log(f'SELL EXECUTED - Price: {order.executed.price:.2f}, Cost: {order.executed.value:.2f}, Commission: {order.executed.comm:.2f}')
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
-            print('Order Canceled/Margin/Rejected')
-
+            self.log('Order Canceled/Margin/Rejected')
         self.order = None
 
+    def log(self, txt, dt=None):
+        dt = dt or self.datas[0].datetime.datetime(0)
+        logging.info(f'{dt.isoformat()} - {txt}')
+
+    def _long_trend_filter(self, row):
+        # 4h, 1d MACD, MA, RSI 등 활용 (상승장: MACD>0, MA>MA_4h, RSI>50)
+        macd_4h = row.get('macd_4h', 0)
+        macd_1d = row.get('macd_1d', 0)
+        ma_1h = row.get('bollinger_mavg_20d', 0)
+        ma_4h = row.get('bollinger_mavg_20d_4h', 0)
+        ma_1d = row.get('bollinger_mavg_20d_1d', 0)
+        rsi_4h = row.get('rsi_14d_4h', 50)
+        rsi_1d = row.get('rsi_14d_1d', 50)
+        # 상승장: MACD>0, MA_1h>MA_4h, MA_4h>MA_1d, RSI>50
+        return (macd_4h > 0) and (macd_1d > 0) and (ma_1h > ma_4h > ma_1d) and (rsi_4h > 50) and (rsi_1d > 50)
+
+    def _short_trend_filter(self, row):
+        macd_4h = row.get('macd_4h', 0)
+        macd_1d = row.get('macd_1d', 0)
+        ma_1h = row.get('bollinger_mavg_20d', 0)
+        ma_4h = row.get('bollinger_mavg_20d_4h', 0)
+        ma_1d = row.get('bollinger_mavg_20d_1d', 0)
+        rsi_4h = row.get('rsi_14d_4h', 50)
+        rsi_1d = row.get('rsi_14d_1d', 50)
+        # 하락장: MACD<0, MA_1h<MA_4h, MA_4h<MA_1d, RSI<50
+        return (macd_4h < 0) and (macd_1d < 0) and (ma_1h < ma_4h < ma_1d) and (rsi_4h < 50) and (rsi_1d < 50)
+
+    def _takeprofit_signal(self, row, price):
+        # 이동평균선 이탈, RSI 과매수/과매도 등
+        ma_1h = row.get('bollinger_mavg_20d', 0)
+        rsi_1h = row.get('rsi_14d', 50)
+        # 익절 조건: 가격이 MA 아래로 이탈 or RSI>80(과매수) or RSI<20(과매도)
+        if price < ma_1h or rsi_1h > 80 or rsi_1h < 20:
+            return True
+        return False
+
+    def next(self):
+        if self.order:
+            return
+        current_dt = pd.Timestamp(self.data.datetime.datetime(0))
+        if current_dt in self.p.data_df.index:
+            try:
+                row = self.p.data_df.loc[current_dt]
+                features = row[self.feature_columns].values.reshape(1, -1)
+                prediction = self.model.predict(features)[0]
+                # 신뢰도(softmax 확률) 추출
+                if hasattr(self.model, 'predict_proba'):
+                    proba = self.model.predict_proba(features)[0]
+                    conf = max(proba)  # 예측 클래스의 확률
+                else:
+                    conf = 0.5  # fallback
+                # 신뢰도 기반 레버리지 결정
+                if conf >= 0.9:
+                    self.leverage = 10
+                elif conf >= 0.7:
+                    self.leverage = 5
+                else:
+                    self.leverage = 2
+                cash = self.broker.getcash()
+                value = self.broker.getvalue()
+                price = self.data.close[0]
+                # ATR 기반 손절폭 계산
+                atr = row.get('atr_14d', 0)
+                # 레버리지 반영 주문 크기 계산 (1% * 레버리지)
+                if price > 0:
+                    size = (value * 0.01 * self.leverage) / price
+                else:
+                    size = 0
+                # 진입 시 손절/트레일링스탑 초기화
+                if prediction == 2 and self.position_size == 0 and size > 0:
+                    if self._long_trend_filter(row):
+                        self.stop_loss = price - self.atr_mult * atr if atr > 0 else price * (1 - self.max_loss_pct)
+                        self.trailing_stop = self.stop_loss
+                        self.highest_price = price
+                        self.log(f'BUY SIGNAL (MFT CONFIRM) - Price: {price:.2f}, Size: {size:.4f}, SL: {self.stop_loss:.2f}')
+                        self.order = self.buy(size=size)
+                    else:
+                        self.log(f'BUY SIGNAL IGNORED (Long trend filter not passed)')
+                    return
+                # 포지션 보유 중 동적 손절/익절 체크
+                if self.position_size > 0 and self.entry_price:
+                    # Trailing Stop: 최고가 갱신 시 손절 라인도 상승
+                    if self.highest_price is None or price > self.highest_price:
+                        self.highest_price = price
+                        if atr > 0:
+                            self.trailing_stop = max(self.trailing_stop, price - self.atr_mult * atr)
+                    # 절대 최대 손실 제한
+                    max_stop = self.entry_price * (1 - self.max_loss_pct)
+                    # 손절 라인 중 가장 높은 값 적용
+                    effective_stop = max(self.stop_loss or 0, self.trailing_stop or 0, max_stop)
+                    # 손절 조건
+                    if price <= effective_stop:
+                        self.log(f'STOP LOSS TRIGGERED! Price: {price:.2f} <= Stop: {effective_stop:.2f}')
+                        self.order = self.close()
+                        return
+                    # 강제 청산(마진콜) 시뮬레이션
+                    liq_price = self.entry_price * (1 - (1/self.leverage) - self.liquidation_buffer)
+                    if price <= liq_price:
+                        self.log(f'LIQUIDATION TRIGGERED! Price: {price:.2f} <= Liq.Price: {liq_price:.2f} (Lev:{self.leverage}x)')
+                        self.order = self.close()
+                        return
+                    # 추세 반전 익절 조건
+                    if self._takeprofit_signal(row, price):
+                        self.log(f'TAKE PROFIT (Trend Reversal) - Price: {price:.2f}')
+                        self.order = self.close()
+                        return
+                # 매도 신호(청산) - 기존 필터 유지
+                if prediction == 0 and self.position_size > 0:
+                    if self._short_trend_filter(row):
+                        pos_size = self.position.size
+                        self.log(f'SELL SIGNAL (MFT CONFIRM) - Price: {price:.2f}, Size: {pos_size:.4f}')
+                        self.order = self.close()
+                    else:
+                        self.log(f'SELL SIGNAL IGNORED (Short trend filter not passed)')
+                # Hold(1) - do nothing
+            except Exception as e:
+                self.log(f'Error in next(): {str(e)}')
+                if 'features' in locals():
+                    self.log(f'Feature values: {features}')
+
+def run_backtest():
+    """Main function to run the backtest."""
+    logging.info("--- Starting Backtest ---")
+    
+    # 1. Load Data
+    data_path = os.path.join(PROJECT_ROOT, BACKTESTER_PARAMS['data_path'])
+    try:
+        df = pd.read_parquet(data_path)
+        df.index = df.index.tz_localize(None)
+        df.index = pd.to_datetime(df.index)
+        logging.info(f"Successfully loaded data from {data_path}. Shape: {df.shape}")
+
+        # =================================================================
+        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ 디버깅 코드 추가 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+        # =================================================================
+        logging.info("\n--- DEBUG: Columns in loaded DataFrame ---")
+        logging.info(df.columns.tolist())
+        logging.info("------------------------------------------\n")
+        # =================================================================
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ 디버깅 코드 끝 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        # =================================================================
+    except FileNotFoundError:
+        logging.error(f"Data file not found at {data_path}. Please run feature engineering first.")
+        return
+
+    # 2. Load Model
+    model_path = os.path.join(PROJECT_ROOT, BACKTESTER_PARAMS['model_path'])
+    try:
+        model = joblib.load(model_path)
+        logging.info(f"Successfully loaded model from {model_path}")
+    except FileNotFoundError:
+        logging.error(f"Model file not found at {model_path}. Please train the model first.")
+        return
+
+    # 3. Setup Backtrader
+    cerebro = bt.Cerebro()
+    
+    # Add data feed
+    data_feed = bt.feeds.PandasData(dataname=df)
+    cerebro.adddata(data_feed)
+
+    # Add strategy
+    cerebro.addstrategy(MLStrategy, model=model, data_df=df)
+
+    # Set initial capital and commission
+    cerebro.broker.setcash(BACKTESTER_PARAMS['initial_cash'])
+    cerebro.broker.setcommission(commission=BACKTESTER_PARAMS['commission'])
+
+    # 4. Run Backtest
+    initial_value = cerebro.broker.getvalue()
+    logging.info(f"Starting portfolio value: {initial_value:,.2f}")
+    
+    results = cerebro.run()
+    
+    final_value = cerebro.broker.getvalue()
+    logging.info(f"Final portfolio value: {final_value:,.2f}")
+    returns = (final_value - initial_value) / initial_value * 100
+    logging.info(f"Total Return: {returns:.2f}%")
+
+    # 5. Plot and Save Results with error handling
+    plot_path = os.path.join(PROJECT_ROOT, 'backtester', 'backtest_result.png')
+    logging.info(f"Attempting to save backtest plot to {plot_path}")
+    try:
+        # matplotlib 설정 수정
+        import matplotlib
+        matplotlib.use('Agg')  # GUI 없이 이미지 생성
+        import matplotlib.pyplot as plt
+        
+        # Backtrader의 플로팅 시도
+        try:
+            figs = cerebro.plot(style='candlestick', volume=False, iplot=False)
+            if figs and len(figs) > 0 and len(figs[0]) > 0:
+                fig = figs[0][0]
+                fig.savefig(plot_path, dpi=300, bbox_inches='tight')
+                logging.info(f"Successfully saved plot to {plot_path}")
+            else:
+                raise ValueError("Plotting produced no figures")
+        except (AttributeError, ValueError) as e:
+            logging.warning(f"Backtrader plotting failed: {str(e)}")
+            logging.info("Attempting to create simple portfolio value plot instead...")
+            
+            # 간단한 포트폴리오 가치 플롯 생성
+            plt.figure(figsize=(12, 6))
+            plt.plot(df.index, results[0].observers.broker.lines.value)
+            plt.title('Portfolio Value Over Time')
+            plt.xlabel('Date')
+            plt.ylabel('Value')
+            plt.grid(True)
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            logging.info(f"Successfully saved simplified plot to {plot_path}")
+    
+    except Exception as e:
+        logging.error(f"Error while plotting: {str(e)}")
+        logging.error("Unable to save plot, but backtest results are still valid")
 
 if __name__ == '__main__':
-    # --- 백테스트 준비 ---
-    # 1. Cerebro 엔진 생성
-    cerebro = bt.Cerebro()
-
-    # 2. 가짜 모델 생성 및 저장 (실제로는 훈련된 모델을 사용해야 함)
-    print("--- Creating a dummy model for demonstration ---")
-    if not os.path.exists('models'): os.makedirs('models')
-    dummy_features = pd.DataFrame(np.random.rand(100, 5), columns=['rsi_14d', 'macd', 'macd_signal', 'macd_hist', 'bollinger_mavg_20d'])
-    dummy_labels = np.random.choice([-1, 0, 1], size=100)
-    dummy_model = RandomForestClassifier().fit(dummy_features, dummy_labels)
-    with open('models/model_v1.pkl', 'wb') as f:
-        pickle.dump(dummy_model, f)
-    print("Dummy model 'models/model_v1.pkl' created.")
-
-    # 3. InfluxDB에서 실제 데이터 로드
-    print("\n--- Loading data from InfluxDB for backtesting ---")
-    try:
-        data_collector = BinanceDataCollector()
-        # 최근 1년치 데이터를 불러옵니다. 필요에 따라 기간을 조정할 수 있습니다.
-        end_time = datetime.now()
-        start_time = end_time - timedelta(days=365)
-        
-        print(f"Fetching data from {start_time} to {end_time}...")
-        
-        df_data = data_collector.query_data_from_influxdb(
-            bucket=INFLUXDB_BUCKET,
-            measurement='crypto_prices_hourly',
-            symbol='BTCUSDT',
-            start_time=start_time.isoformat(),
-            end_time=end_time.isoformat()
-        )
-
-        if df_data.empty:
-            print("Error: No data loaded from InfluxDB. Please check the following:")
-            print("1. InfluxDB 서비스가 실행 중인지 확인하세요.")
-            print("2. config/credentials.py 파일에 올바른 InfluxDB 설정이 있는지 확인하세요.")
-            print("3. 지정한 버킷과 측정값이 존재하는지 확인하세요.")
-            sys.exit(1)
-            
-        print(f"Successfully loaded {len(df_data)} records from InfluxDB.")
-        print(f"Date range: {df_data.index.min()} to {df_data.index.max()}")
-        
-        # 데이터 전처리 (필요한 컬럼만 선택하고, 인덱스 설정)
-        required_columns = ['open', 'high', 'low', 'close', 'volume']
-        if not all(col in df_data.columns for col in required_columns):
-            missing = [col for col in required_columns if col not in df_data.columns]
-            print(f"Error: Missing required columns in the data: {missing}")
-            sys.exit(1)
-            
-        df_data = df_data[required_columns].dropna()
-        
-        # backtrader용 데이터 피드 생성
-        data_feed = bt.feeds.PandasData(
-            dataname=df_data,
-            datetime=None,  # 인덱스를 datetime으로 사용
-            open=0,        # open price 컬럼 인덱스
-            high=1,        # high price 컬럼 인덱스
-            low=2,         # low price 컬럼 인덱스
-            close=3,       # close price 컬럼 인덱스
-            volume=4,      # volume 컬럼 인덱스
-            openinterest=-1  # 사용 안 함
-        )
-        
-        cerebro.adddata(data_feed)
-        
-    except Exception as e:
-        print(f"Error loading data from InfluxDB: {str(e)}")
-        print("\n추가 정보:")
-        print("1. InfluxDB 서비스가 실행 중인지 확인하세요.")
-        print("2. config/credentials.py 파일에 올바른 InfluxDB 설정이 있는지 확인하세요.")
-        print(f"3. 버킷 '{INFLUXDB_BUCKET}'과 측정값 'crypto_prices_hourly'가 존재하는지 확인하세요.")
-        sys.exit(1)
-
-    # 4. 전략 추가
-    print("\n--- Adding Strategy ---")
-    cerebro.addstrategy(MLStrategy, model_path='models/model_v1.pkl')
-
-    # 5. 초기 자본금 및 거래 비용 설정
-    initial_cash = 100000.0
-    cerebro.broker.setcash(initial_cash)
-    cerebro.broker.setcommission(commission=0.001)  # 수수료 0.1%
-    print(f"Initial Portfolio Value: {initial_cash:.2f}")
-
-    # 6. 분석기 추가
-    print("\n--- Adding Analyzers ---")
-    cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe_ratio', timeframe=bt.TimeFrame.Days)
-    cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
-    cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trade_analyzer')
-    cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
-
-    # 7. 백테스트 실행
-    print("\n--- Running Backtest ---")
-    try:
-        results = cerebro.run()
-        strat = results[0]
-
-        # 8. 결과 출력
-        print("\n=== Backtest Results ===")
-        print(f"Final Portfolio Value: {cerebro.broker.getvalue():.2f}")
-        print(f"Net Profit: {cerebro.broker.getvalue() - initial_cash:.2f} ({(cerebro.broker.getvalue()/initial_cash - 1)*100:.2f}%)")
-        
-        # 분석 결과 출력
-        print("\n--- Performance Analysis ---")
-        
-        # 샤프 지수
-        sharpe_ratio = strat.analyzers.sharpe_ratio.get_analysis()
-        print(f"Sharpe Ratio: {sharpe_ratio.get('sharperatio', 0):.2f}")
-        
-        # 최대 낙폭
-        drawdown = strat.analyzers.drawdown.get_analysis()
-        print(f"Max Drawdown: {drawdown['max']['drawdown']:.2f}%")
-        print(f"Max Drawdown Period: {drawdown['max']['len']} bars")
-        
-        # 수익률 분석
-        returns = strat.analyzers.returns.get_analysis()
-        print(f"\nReturn: {returns['rtot']*100:.2f}%")
-        print(f"Annual Return: {returns['rnorm100']:.2f}%")
-        
-        # 거래 분석
-        trade_analysis = strat.analyzers.trade_analyzer.get_analysis()
-        if hasattr(trade_analysis, 'total') and trade_analysis.total.total > 0:
-            print("\n--- Trade Analysis ---")
-            print(f"Total Trades: {trade_analysis.total.total}")
-            print(f"Winning Trades: {getattr(trade_analysis.won, 'total', 0)}")
-            print(f"Losing Trades: {getattr(trade_analysis.lost, 'total', 0)}")
-            print(f"Win Rate: {getattr(trade_analysis.won, 'total', 0) / trade_analysis.total.total * 100:.2f}%")
-            print(f"Average Win: {getattr(trade_analysis.won, 'pnl', {}).get('average', 0):.2f}")
-            print(f"Average Loss: {abs(getattr(trade_analysis.lost, 'pnl', {}).get('average', 0)):.2f}")
-            print(f"Profit Factor: {getattr(trade_analysis, 'pnl', {}).get('gross', {}).get('total', 0) / abs(getattr(trade_analysis, 'pnl', {}).get('gross', {}).get('total', 1)):.2f}")
-        else:
-            print("\nNo trades were made during the backtest period.")
-            
-        # 차트 그리기 (선택 사항)
-        # cerebro.plot(style='candlestick')
-            
-    except Exception as e:
-        print(f"\nError during backtest: {str(e)}")
-        import traceback
-        traceback.print_exc()
-
-        # 9. 그래프 출력
-        cerebro.plot(style='candlestick', volume=True, barup='green', bardown='red')
+    run_backtest()

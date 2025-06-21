@@ -1,4 +1,15 @@
 # -*- coding: utf-8 -*-
+import logging
+import sys
+
+# 로거 설정
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # 로그 레벨을 INFO로 설정하여 필요한 정보만 출력
+stream_handler = logging.StreamHandler(sys.stdout)
+log_formatter = logging.Formatter("%(asctime)s - [%(levelname)s] - [%(name)s:%(lineno)d] - %(message)s")
+stream_handler.setFormatter(log_formatter)
+logger.addHandler(stream_handler)
+
 """
 다중 타임프레임 데이터를 기반으로 피처를 생성, 통합하고 저장합니다.
 """
@@ -34,6 +45,12 @@ def add_technical_indicators(df):
     df['bollinger_std_20d'] = df['close'].rolling(window=20).std()
     df['bollinger_upper'] = df['bollinger_mavg_20d'] + (df['bollinger_std_20d'] * 2)
     df['bollinger_lower'] = df['bollinger_mavg_20d'] - (df['bollinger_std_20d'] * 2)
+    # ATR(평균 진폭) 추가
+    high_low = df['high'] - df['low']
+    high_close = (df['high'] - df['close'].shift()).abs()
+    low_close = (df['low'] - df['close'].shift()).abs()
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    df['atr_14d'] = tr.rolling(window=14).mean()
     return df
 
 # --- 1. 데이터 로딩 함수들 ---
@@ -151,8 +168,8 @@ def build_feature_matrix(symbol: str, start_date: str, end_date: str) -> pd.Data
     
     # 1. 1시간 OHLCV 데이터 로드 (베이스)
     # load_ohlcv_data_for_timeframe 함수가 내부적으로 config에서 measurement_name을 사용하므로, 여기서는 호출 시 measurement_name을 전달할 필요가 없음
-    # 해당 함수의 measurement_name 파라미터는 이제 사용되지 않으므로, 호출부에서 제거하거나 함수 정의에서 제거 필요.
-    # 우선 호출부에서 제거하고, 함수 정의는 그대로 둠 (다른 곳에서 사용될 가능성 고려)
+    # 해당 함수의 measurement_name 파라미터는 이제 사용되지 않으므로, 호출부에서 제거거나 함수 정의에서 제거 필요.
+    # 우선 호출부에서 제거고, 함수 정의는 그대로 둠 (다른 곳에서 사용될 가능성 고려)
     base_ohlcv_df = load_ohlcv_data_for_timeframe(reader, symbol, start_date, end_date, '1h')
     if base_ohlcv_df.empty:
         logging.error("Critical: 1h base OHLCV data is missing. Cannot build feature matrix.")
@@ -181,28 +198,29 @@ def build_feature_matrix(symbol: str, start_date: str, end_date: str) -> pd.Data
     final_df_with_funding_features = generate_funding_rate_features(merged_with_ta_df)
 
     # 5. 상위 타임프레임 OHLCV 피처 로드 및 병합
-    # 기존 feature_dfs 로직을 수정하여 상위 타임프레임 처리
-    higher_timeframes = ['4h', '1d']
+    # 15분/4시간만 사용
+    higher_timeframes = ['4h']
     current_base_df = final_df_with_funding_features.copy()
 
     print("\n--- Merging higher timeframe OHLCV features onto 1h base (with funding features) ---")
     for tf in higher_timeframes:
         df_higher_tf_ohlcv = load_ohlcv_data_for_timeframe(reader, symbol, start_date, end_date, tf)
         if df_higher_tf_ohlcv.empty:
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                current_base_df[f'{col}_{tf}'] = np.nan
             continue
-        
-        # 상위 타임프레임 데이터에도 TA 지표 추가
         df_higher_tf_features = add_technical_indicators(df_higher_tf_ohlcv)
-        
-        # 병합할 피처 컬럼들 선택 (OHLCV 및 생성된 TA 지표, 이미 _tf 접미사가 붙어있지 않음)
-        # 따라서 여기서 접미사를 붙여줘야 함
-        cols_to_rename = {c: f"{c}_{tf}" for c in df_higher_tf_features.columns if c not in ['symbol']} # 'symbol'은 제외
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col not in df_higher_tf_features.columns:
+                df_higher_tf_features[col] = np.nan
+        cols_to_rename = {c: f"{c}_{tf}" for c in df_higher_tf_features.columns if c not in ['symbol']}
         df_higher_tf_features_renamed = df_higher_tf_features.rename(columns=cols_to_rename)
-        
-        # 실제 병합할 컬럼들 (원본 OHLCV + TA 지표, 모두 _tf 접미사가 붙음)
         feature_cols_to_merge = [c for c in df_higher_tf_features_renamed.columns if c.endswith(f'_{tf}')]
         temp_higher_tf_features_to_merge = df_higher_tf_features_renamed[feature_cols_to_merge]
-
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            colname = f'{col}_{tf}'
+            if colname not in temp_higher_tf_features_to_merge.columns:
+                temp_higher_tf_features_to_merge[colname] = np.nan
         logging.info(f"Merging {tf} features using merge_asof (backward fill)...")
         current_base_df = pd.merge_asof(
             left=current_base_df.sort_index(), 
@@ -214,9 +232,8 @@ def build_feature_matrix(symbol: str, start_date: str, end_date: str) -> pd.Data
 
     # 6. 최종 NaN 처리
     # ffill 후 bfill 또는 특정 전략 사용. 현재 코드에서는 ffill 후 dropna.
-    # 펀딩비 피처 생성 시 bfill->ffill->0 처리했으므로, 여기서는 ffill 후 dropna 유지
+    # 펀딩비 피처 생성 시 bfill->ffill->0 처리했으므로, 여기서는 ffill만 하고 dropna는 제거
     current_base_df.fillna(method='ffill', inplace=True)
-    current_base_df.dropna(inplace=True)
 
     logging.info("\n--- Final Feature Matrix --- ")
     # 기존의 루프는 build_feature_matrix 함수 내의 상위 타임프레임 처리 로직과 중복/혼선되므로 제거.
@@ -231,13 +248,15 @@ def build_feature_matrix(symbol: str, start_date: str, end_date: str) -> pd.Data
         ta_cols = [col for col in current_base_df.columns if col not in ohlcv_cols and col not in funding_cols and not any(tf_suffix in col for tf_suffix in [f'_{htf}' for htf in higher_timeframes]) and col != 'symbol']
         higher_tf_cols_ordered = []
         for htf in higher_timeframes:
-            higher_tf_cols_ordered.extend(sorted([col for col in current_base_df.columns if f'_{htf}' in col]))
-        
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                cname = f'{col}_{htf}'
+                if cname in current_base_df.columns:
+                    higher_tf_cols_ordered.append(cname)
+            higher_tf_cols_ordered.extend(sorted([col for col in current_base_df.columns if f'_{htf}' in col and col not in higher_tf_cols_ordered]))
         final_column_order = ohlcv_cols + sorted(funding_cols) + sorted(ta_cols) + higher_tf_cols_ordered
         # current_base_df에 없는 컬럼이 final_column_order에 있을 수 있으므로, 있는 컬럼만 선택
         final_column_order = [col for col in final_column_order if col in current_base_df.columns]
         current_base_df = current_base_df[final_column_order]
-
 
     print(current_base_df.head())
     print(f"Shape: {current_base_df.shape}")
@@ -245,23 +264,72 @@ def build_feature_matrix(symbol: str, start_date: str, end_date: str) -> pd.Data
 
 if __name__ == '__main__':
     # 로깅 설정 (DEBUG 레벨로 변경하여 상세 로그 확인)
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s') # 포맷에 모듈명과 라인번호 추가하면 더 유용
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s')
     try:
         logging.info("--- Starting feature engineering script ---")
-        SYMBOL = DATA_PARAMS.get('symbol', 'BTC/USDT') # config.py에서 심볼 가져오기
-        START_DATE = '2024-05-01T00:00:00Z'
-        END_DATE = '2024-05-07T23:59:59Z' # 테스트를 위해 7일 전체 포함
-        final_features = build_feature_matrix(SYMBOL, START_DATE, END_DATE)
-        if final_features is not None and not final_features.empty:
-            output_dir = 'data/processed'
-            os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, f'{SYMBOL.lower()}_feature_matrix.parquet')
-            
-            final_features.to_parquet(output_path)
-            logging.info(f"\nFeature matrix saved successfully to: {output_path}")
-        else:
-            logging.warning("\nFeature matrix generation failed or resulted in an empty dataframe.")
+        SYMBOL = DATA_PARAMS.get('symbol', 'BTC/USDT')
+        # 훈련/테스트 기간 config에서 읽기
+        TRAIN_START = DATA_PARAMS.get('train_start_date', '2018-01-01T00:00:00Z')
+        TRAIN_END = DATA_PARAMS.get('train_end_date', '2023-12-31T23:59:59Z')
+        TEST_START = DATA_PARAMS.get('test_start_date', '2024-01-01T00:00:00Z')
+        TEST_END = DATA_PARAMS.get('test_end_date', '2025-06-21T23:59:59Z')
+        output_dir = 'data/processed'
+        os.makedirs(output_dir, exist_ok=True)
 
+        # 심볼에서 / 제거 (BTC/USDT -> btcusdt)
+        symbol_safe = SYMBOL.replace('/', '').lower()
+        # 1. 훈련 feature matrix
+        logging.info(f"Building TRAIN feature matrix: {TRAIN_START} ~ {TRAIN_END}")
+        train_features = build_feature_matrix(SYMBOL, TRAIN_START, TRAIN_END)
+        if train_features is not None and not train_features.empty:
+            train_path = os.path.join(output_dir, f'{symbol_safe}_feature_matrix_train.parquet')
+            train_features.to_parquet(train_path)
+            # 컬럼 순서/이름 저장
+            train_columns_path = os.path.join(output_dir, f'{symbol_safe}_feature_matrix_columns.txt')
+            with open(train_columns_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(train_features.columns))
+            logging.info(f"Train feature matrix saved: {train_path}")
+        else:
+            logging.warning("Train feature matrix generation failed or empty.")
+
+        # 2. 테스트 feature matrix (버퍼 방식 적용)
+        logging.info(f"Building TEST feature matrix: {TEST_START} ~ {TEST_END}")
+        from dateutil.parser import parse
+        from datetime import timedelta
+        max_lookback = 264  # 가장 긴 window(볼린저밴드 1d 기준)로 확장
+        test_start_dt = parse(TEST_START)
+        buffer_hours = max_lookback  # 1h 기준
+        buffer_start_dt = test_start_dt - timedelta(hours=buffer_hours)
+        BUFFERED_TEST_START = buffer_start_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+        # 버퍼 포함 test feature matrix 생성
+        test_features_full = build_feature_matrix(SYMBOL, BUFFERED_TEST_START, TEST_END)
+        # test set 구간만 남기기
+        test_features = test_features_full.loc[TEST_START:TEST_END]
+        # NaN 분포 출력
+        print("--- NaN Check in Test Set (Before Drop) ---")
+        nan_counts = test_features.isna().sum()
+        print("Columns with NaN values:")
+        print(nan_counts[nan_counts > 0].sort_values(ascending=False))
+        print("-------------------------------------------")
+        # NaN이 있는 행은 drop (test set 앞부분 192개)
+        test_features = test_features.dropna()
+        print(f"[INFO] test_features shape after dropna: {test_features.shape}")
+        # 이하 기존 컬럼 동기화 및 저장 로직...
+        test_path = os.path.join(output_dir, f'{symbol_safe}_feature_matrix_test.parquet')
+        train_columns_path = os.path.join(output_dir, f'{symbol_safe}_feature_matrix_columns.txt')
+        if os.path.exists(train_columns_path):
+            with open(train_columns_path, 'r', encoding='utf-8') as f:
+                train_columns = [line.strip() for line in f.readlines() if line.strip()]
+            for col in train_columns:
+                if col not in test_features.columns:
+                    test_features[col] = np.nan
+            test_features = test_features[[col for col in train_columns]]
+            print(f"[DEBUG] test_features columns before save: {list(test_features.columns)}")
+            print(f"[DEBUG] train_columns: {train_columns}")
+        test_features.to_parquet(test_path)
+        df_check = pd.read_parquet(test_path)
+        print(f"[DEBUG] parquet columns after save: {list(df_check.columns)}")
+        logging.info(f"Test feature matrix saved: {test_path}")
     except Exception as e:
         logging.error(f"\nAn unexpected error occurred: {e}")
         traceback.print_exc()

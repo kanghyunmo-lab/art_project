@@ -327,79 +327,72 @@ def collect_historical_funding_rate(symbol, start_date_str, end_date_str):
             logging.info(f"Historical collection for {symbol} reached or passed end_date ({effective_end_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}).")
             break
 
-    logging.info(f"{symbol}에 대한 과거 데이터 수집 완료. 총 {total_records_collected_session}개의 데이터 포인트 수집됨.")
-    return total_records_collected_session
-
-
 def main():
-    parser = argparse.ArgumentParser(description="Binance Funding Rate Collector for InfluxDB.")
+    """스크립트 메인 실행 함수. 커맨드라인 인자를 파싱하여 펀딩비 수집을 실행합니다."""
+    parser = argparse.ArgumentParser(description="Binance 펀딩비 데이터 수집기")
+
+    # config.py에서 로드한 파라미터가 없을 경우를 대비하여 .get()으로 안전하게 접근하고 기본값 제공
+    default_symbol = FUNDING_RATE_COLLECTOR_PARAMS.get('default_symbol', 'BTCUSDT')
+    default_mode = FUNDING_RATE_COLLECTOR_PARAMS.get('default_mode', 'historical') # 기본 모드를 historical로 변경
+    default_limit = FUNDING_RATE_COLLECTOR_PARAMS.get('default_limit', 1000)
 
     parser.add_argument(
         '--symbol',
         type=str,
-        default=FUNDING_RATE_COLLECTOR_PARAMS['default_symbol'],
-        help=f"Target symbol to collect (e.g., BTCUSDT). Default: {FUNDING_RATE_COLLECTOR_PARAMS['default_symbol']}"
+        default=default_symbol,
+        help=f"수집할 대상 심볼 (예: BTCUSDT). 기본값: {default_symbol}"
     )
     parser.add_argument(
         '--mode',
         type=str,
-        default=FUNDING_RATE_COLLECTOR_PARAMS['default_mode'],
+        default=default_mode,
         choices=['recent', 'historical'],
-        help="Collector mode: 'recent' for latest data, 'historical' for backfilling. Default: 'recent'"
+        help=f"수집 모드: 'recent' (최신), 'historical' (과거). 기본값: {default_mode}"
     )
     parser.add_argument(
         '--start_date',
         type=str,
         default=None,
-        help="Start date for historical collection (YYYY-MM-DD). Required if mode is 'historical'."
+        help="historical 모드 시작일 (YYYY-MM-DD). 지정하지 않으면 config.py 설정을 따릅니다."
     )
     parser.add_argument(
         '--end_date',
         type=str,
         default=None,
-        help="End date for historical collection (YYYY-MM-DD). Required if mode is 'historical'."
+        help="historical 모드 종료일 (YYYY-MM-DD). 지정하지 않으면 config.py 설정을 따릅니다."
     )
     parser.add_argument(
         '--limit',
         type=int,
-        # 'default_limit' 대신 'recent_limit' 사용 또는 argparse에서 기본값을 설정하고 config 값은 내부 로직에서 참조
-        default=FUNDING_RATE_COLLECTOR_PARAMS.get('recent_limit', 10), # config.py에 recent_limit이 없을 경우 대비
-        help=f"Number of recent records to fetch in 'recent' mode. Default from config: {FUNDING_RATE_COLLECTOR_PARAMS.get('recent_limit', 10)}"
+        default=default_limit,
+        help=f"'recent' 모드에서 가져올 데이터 개수. 기본값: {default_limit}"
     )
 
     args = parser.parse_args()
+    symbol_to_fetch = args.symbol.upper()  # 심볼은 대문자로 통일
 
-    symbol_to_fetch = args.symbol.upper() # 심볼은 대문자로 통일
-
-    logging.info(f"Funding rate collection process started for symbol: {symbol_to_fetch}, mode: {args.mode}")
+    logging.info(f"펀딩비 수집기 시작. 심볼: {symbol_to_fetch}, 모드: {args.mode}")
 
     if args.mode == 'recent':
-        logging.info(f"Collecting recent {args.limit} funding rate(s) for {symbol_to_fetch}...")
-        try:
-            # recent 모드에서는 start_time, end_time을 None으로 전달
-            funding_history = get_funding_rate_history(symbol_to_fetch, start_time=None, end_time=None, limit=args.limit)
-            if funding_history:
-                logging.info(f"Fetched {len(funding_history)} records for recent mode.")
-                points_written = write_to_influxdb(funding_history, symbol_to_fetch)
-                if points_written > 0:
-                    logging.info(f"Successfully wrote {points_written} recent funding rates for {symbol_to_fetch} to InfluxDB.")
-                else:
-                    logging.warning(f"No points written to InfluxDB for recent funding rates of {symbol_to_fetch}. This might be due to write failures or no valid data.")
-            else:
-                # get_funding_rate_history가 None을 반환하거나 빈 리스트를 반환하는 경우 (모든 재시도 실패 또는 데이터 없음)
-                logging.warning(f"Failed to fetch recent funding rates for {symbol_to_fetch} after all retries, or no data available.")
-        except (requests.exceptions.RequestException, BinanceApiLogicalError, ValueError, ConnectionError) as e:
-            logging.error(f"Critical error during recent data collection for {symbol_to_fetch}: {type(e).__name__}: {e}")
+        logging.info(f"최신 펀딩비 {args.limit}개 수집 시작: {symbol_to_fetch}")
+        # 'recent' 모드에 대한 함수가 정의되어 있다면 호출
+        # collect_recent_funding_rate(symbol_to_fetch, limit=args.limit)
+        logging.warning("'recent' 모드는 현재 지원되지 않을 수 있습니다. 'historical' 모드를 사용하세요.")
 
     elif args.mode == 'historical':
-        if not (args.start_date and args.end_date):
-            logging.error("Error: --start_date and --end_date are required for historical mode.")
+        # 커맨드라인 인자가 있으면 사용하고, 없으면 config.py 설정 사용
+        start_date = args.start_date or DATA_PARAMS.get('fetch_start_date')
+        end_date = args.end_date or DATA_PARAMS.get('fetch_end_date')
+
+        if not start_date or not end_date:
+            logging.error("오류: 데이터 수집 기간이 정의되지 않았습니다. --start_date/--end_date 인자를 사용하거나 config/config.py에 fetch_start_date/fetch_end_date를 설정하세요.")
             parser.print_help()
             return
-        logging.info(f"Collecting historical funding rates for {symbol_to_fetch} from {args.start_date} to {args.end_date}...")
-        collect_historical_funding_rate(symbol_to_fetch, args.start_date, args.end_date)
+            
+        logging.info(f"과거 펀딩비 수집 시작: {symbol_to_fetch} (기간: {start_date} ~ {end_date})")
+        collect_historical_funding_rate(symbol_to_fetch, start_date, end_date)
     
-    logging.info(f"Funding rate collection process finished for symbol: {symbol_to_fetch}, mode: {args.mode}")
+    logging.info(f"펀딩비 수집 프로세스 완료. 심볼: {symbol_to_fetch}, 모드: {args.mode}")
 
 if __name__ == "__main__":
     main()

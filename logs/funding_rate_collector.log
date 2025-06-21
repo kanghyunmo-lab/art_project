@@ -89,3 +89,23 @@ HTTP response body: {"code":"not found","message":"bucket \"funding_rates\" not 
 2025-06-20 23:41:21,869 - INFO - InfluxDB에 10개 BTCUSDT 펀딩 비율 데이터 쓰기 완료. 버킷: funding_rates
 2025-06-20 23:41:21,869 - INFO - Successfully wrote 10 recent funding rates for BTCUSDT to InfluxDB.
 2025-06-20 23:41:21,870 - INFO - Funding rate collection process finished for symbol: BTCUSDT, mode: recent
+2025-06-21 13:37:12,011 - INFO - Funding rate collection process started for symbol: BTCUSDT, mode: recent
+2025-06-21 13:37:12,014 - INFO - Collecting recent 10 funding rate(s) for BTCUSDT...
+2025-06-21 13:37:12,119 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-21 13:37:12,120 - INFO - Fetched 10 records for recent mode.
+2025-06-21 13:37:12,185 - INFO - InfluxDB에 10개 BTCUSDT 펀딩 비율 데이터 쓰기 완료. 버킷: funding_rates
+2025-06-21 13:37:12,186 - INFO - Successfully wrote 10 recent funding rates for BTCUSDT to InfluxDB.
+2025-06-21 13:37:12,187 - INFO - Funding rate collection process finished for symbol: BTCUSDT, mode: recent
+2025-06-21 13:37:51,317 - INFO - Funding rate collection process started for symbol: BTCUSDT, mode: recent
+2025-06-21 13:37:51,319 - INFO - Collecting recent 10 funding rate(s) for BTCUSDT...
+2025-06-21 13:37:51,454 - INFO - BTCUSDT 펀딩 비율 API 호출 성공. 10개 데이터 수신.
+2025-06-21 13:37:51,455 - INFO - Fetched 10 records for recent mode.
+2025-06-21 13:37:51,499 - INFO - InfluxDB에 10개 BTCUSDT 펀딩 비율 데이터 쓰기 완료. 버킷: funding_rates
+2025-06-21 13:37:51,500 - INFO - Successfully wrote 10 recent funding rates for BTCUSDT to InfluxDB.
+2025-06-21 13:37:51,504 - INFO - Funding rate collection process finished for symbol: BTCUSDT, mode: recent
+2025-06-21 13:45:47,750 - INFO - 펀딩비 수집기 시작. 심볼: BTCUSDT, 모드: recent
+2025-06-21 13:45:47,751 - INFO - 최신 펀딩비 10개 수집 시작: BTCUSDT
+2025-06-21 13:45:47,752 - WARNING - 'recent' 모드는 현재 지원되지 않을 수 있습니다. 'historical' 모드를 사용하세요.
+2025-06-21 13:45:47,754 - INFO - 펀딩비 수집 프로세스 완료. 심볼: BTCUSDT, 모드: recent
+2025-06-21 13:47:33,009 - INFO - 펀딩비 수집기 시작. 심볼: BTCUSDT, 모드: historical
+2025-06-21 13:47:33,016 - ERROR - 오류: 데이터 수집 기간이 정의되지 않았습니다. --start_date/--end_date 인자를 사용하거나 config/config.py에 fetch_start_date/fetch_end_date를 설정하세요.

@@ -1,0 +1,23 @@
+{
+  "fold_metrics": {
+    "accuracy": [],
+    "precision_macro": [],
+    "recall_macro": [],
+    "f1_macro": [],
+    "precision_weighted": [],
+    "recall_weighted": [],
+    "f1_weighted": []
+  },
+  "class_metrics": {
+    "매도_precision": [],
+    "매도_recall": [],
+    "매도_f1": [],
+    "중립_precision": [],
+    "중립_recall": [],
+    "중립_f1": [],
+    "매수_precision": [],
+    "매수_recall": [],
+    "매수_f1": []
+  },
+  "overall_metrics": {}
+}
