@@ -24,14 +24,48 @@
 
 ## 4. 프로젝트 구조 (Project Structure)
 
-- `data_pipeline/`: 시장 데이터 수집 및 처리 스크립트
-- `features/`: 피처 엔지니어링 스크립트
-- `models/`: 훈련된 머신러닝 모델
-- `backtester/`: 백테스팅 엔진 및 전략
-- `risk_management/`: 리스크 관리 모듈
-- `execution/`: 주문 실행 핸들러
-- `config/`: 각종 설정 파일
-- `scripts/`: 데이터 수집, 모델 생성 등 일회성 스크립트
+```
+├── data_pipeline/        # 실시간·과거 시장 데이터 수집
+│   └── collector.py      # InfluxDB/Binance 등에서 OHLCV 수집
+├── features/             # 피처 엔지니어링
+│   └── build_features.py # 기술 지표, 펀딩레이트 등 생성
+├── models/               # ML 모델 및 학습 코드
+│   ├── base.py           # BaseLogger / BaseModel / BaseTrainer 인터페이스
+│   ├── data_loader.py    # 데이터 로딩·전처리(DataFrame→Features)
+│   ├── training.py       # XGBoostModel 등 모델 학습 로직
+│   ├── evaluation.py     # ModelEvaluator – 성능 측정
+│   └── train_model_new.py# 메인 학습 스크립트(CLI)
+├── backtester/           # 백테스트 엔진 (walk-forward, 전략 검증)
+├── risk_management/      # 다층 리스크 관리 규칙 및 포지션 sizing
+├── execution/            # 거래소 API 인터페이스 및 주문 실행
+├── tests/                # 테스트 스위트
+│   ├── unit_test_*.py    # 각 모듈 단위 테스트
+│   └── integration_test_pipeline.py # 전체 파이프라인 통합 테스트
+├── config/               # 경로·API 키 등 설정
+├── scripts/              # 데이터 수집·유틸리티 스크립트
+└── requirements.txt      # Python 의존성 목록
+```
+
+### 전체 파이프라인 흐름
+```
+Raw Data
+   ↓
+data_pipeline/collector.py
+   ↓
+features/build_features.py (라벨/피처 생성)
+   ↓
+models/data_loader.py (전처리·스플릿)
+   ↓
+models/training.py (모델 학습)
+   ↓
+models/evaluation.py (성능 평가)
+   ↓
+backtester/ (전략 검증)
+   ↓
+execution/ (실거래 주문)
+```
+
+각 디렉터리 및 주요 파일의 용도를 한눈에 볼 수 있도록 정리했습니다. 이 구조를 기준으로 개발 · 테스트 · 배포가 이루어집니다.
 
 ## 5. 설치 및 설정 (Setup)
 
