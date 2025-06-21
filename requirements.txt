@@ -1,16 +1,16 @@
-pandas
-influxdb-client
-requests
-python-binance
-tqdm
-pyarrow
-scikit-learn
-xgboost
-lightgbm
-python-dotenv
-backtrader
-python-binance
-influxdb-client
-python-telegram-bot
-#tensorflow
-#pytorch
+# Data Handling & Analysis
+pandas==1.5.3
+numpy==1.26.4
+pyarrow==16.1.0
+
+# Machine Learning
+scikit-learn==1.7.0
+xgboost==2.0.3
+joblib==1.4.2
+
+# Technical Analysis
+pandas-ta==0.3.14b0
+
+# Database & Environment
+influxdb-client[ciso]>=1.42.0
+python-dotenv==1.0.1
